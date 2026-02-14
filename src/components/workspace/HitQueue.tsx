@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import styled from "@emotion/styled";
-import { Table, Text, Progress } from "@mantine/core";
+import { useTheme } from "@emotion/react";
+import { Table, Progress, ActionIcon, Tooltip } from "@mantine/core";
+import { IconArrowBack } from "@tabler/icons-react";
 import { useStore } from "../../hooks";
 import { IHitAssignment } from "@hit-spooner/api";
 import PanelTitleBar from "../app/PanelTitleBar";
 import { formatDistanceToNowStrict } from "date-fns";
+import YesNoModal from "../modals/YesNoModal";
 
 const StyledTable = styled(Table)`
   width: 100%;
@@ -21,7 +24,6 @@ const StyledTableHeader = styled.th`
 `;
 
 const StyledTableRow = styled.tr`
-  cursor: pointer;
   background-color: ${(props) => props.theme.colors.primary[0]};
   &:nth-of-type(even) {
     background-color: ${(props) => props.theme.colors.primary[1]};
@@ -36,6 +38,14 @@ const StyledTableCell = styled.td`
   border-bottom: 1px solid ${(props) => props.theme.colors.primary[3]};
 `;
 
+const TitleCell = styled(StyledTableCell)`
+  cursor: pointer;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
 const CenteredText = styled.div`
   text-align: center;
   color: ${(props) => props.theme.colors.primary[6]};
@@ -43,43 +53,65 @@ const CenteredText = styled.div`
   margin-top: 50px;
 `;
 
-/**
- * Component to display the user's HIT assignment queue with clickable rows that
- * open the HIT in a new window.
- */
+const tooltipStyles = (theme: any) => ({
+  tooltip: {
+    backgroundColor: theme.colors.primary[1],
+    color: theme.colors.primary[8],
+    border: `1px solid ${theme.colors.primary[3]}`,
+  },
+});
+
 const HitQueue: React.FC = () => {
-  const { queue } = useStore((state) => ({
+  const { queue, returnHit } = useStore((state) => ({
     queue: state.queue,
+    returnHit: state.returnHit,
   }));
 
-  const handleRowClick = (assignment: IHitAssignment) => {
+  const theme = useTheme();
+
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [assignmentToReturn, setAssignmentToReturn] = useState<IHitAssignment | null>(null);
+
+  const handleRowClick = useCallback((assignment: IHitAssignment) => {
     const url = `https://worker.mturk.com/projects/${assignment.project.hit_set_id}/tasks/${assignment.task_id}?assignment_id=${assignment.assignment_id}`;
-
-    // Open a window/tab with full features and reuse it
     window.open(url, "mturkWindow");
-  };
+  }, []);
 
-  const calculateTimeRemainingPercentage = (
-    deadline: string,
-    assignmentDurationInSeconds: number
-  ) => {
-    const now = new Date().getTime();
-    const deadlineTime = new Date(deadline).getTime();
-    const timeRemainingInSeconds = (deadlineTime - now) / 1000; // Convert to seconds
+  const handleReturnClick = useCallback((e: React.MouseEvent, assignment: IHitAssignment) => {
+    e.stopPropagation();
+    setAssignmentToReturn(assignment);
+    setReturnModalOpen(true);
+  }, []);
 
-    if (assignmentDurationInSeconds <= 0) {
-      return 0;
+  const handleConfirmReturn = useCallback(async () => {
+    if (assignmentToReturn) {
+      await returnHit(assignmentToReturn);
     }
+    setReturnModalOpen(false);
+    setAssignmentToReturn(null);
+  }, [assignmentToReturn, returnHit]);
 
-    const percentageRemaining =
-      (timeRemainingInSeconds / assignmentDurationInSeconds) * 100;
-    return Math.max(0, Math.min(percentageRemaining, 100));
-  };
+  const calculateTimeRemainingPercentage = useCallback((deadline: string, duration: number) => {
+    if (duration <= 0) return 0;
+    const now = Date.now();
+    const deadlineTime = new Date(deadline).getTime();
+    const remaining = ((deadlineTime - now) / 1000 / duration) * 100;
+    return Math.max(0, Math.min(remaining, 100));
+  }, []);
+
+  const returnModalMessage = assignmentToReturn ? (
+    <div>
+      <p>Are you sure you want to return this HIT?</p>
+      <p><strong>{assignmentToReturn.project.title}</strong></p>
+      <p>Requester: {assignmentToReturn.project.requester_name}</p>
+      <p>Reward: ${assignmentToReturn.project.monetary_reward.amount_in_dollars.toFixed(2)}</p>
+    </div>
+  ) : null;
 
   if (queue.length === 0) {
-  return (
-    <>
-      <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
+    return (
+      <>
+        <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
         <CenteredText>You don't currently have any HITs accepted.</CenteredText>
       </>
     );
@@ -88,7 +120,6 @@ const HitQueue: React.FC = () => {
   return (
     <>
       <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
-
       <StyledTable highlightOnHover verticalSpacing="sm" striped>
         <thead>
           <StyledTableHeaderRow>
@@ -96,48 +127,51 @@ const HitQueue: React.FC = () => {
             <StyledTableHeader>Title</StyledTableHeader>
             <StyledTableHeader>Reward</StyledTableHeader>
             <StyledTableHeader>Time to Deadline</StyledTableHeader>
+            <StyledTableHeader></StyledTableHeader>
           </StyledTableHeaderRow>
         </thead>
         <tbody>
           {queue.map((assignment: IHitAssignment) => {
-            const assignmentDurationInSeconds =
-              assignment.project.assignment_duration_in_seconds || 0;
-
+            const duration = assignment.project.assignment_duration_in_seconds || 0;
             return (
-              <StyledTableRow
-                key={assignment.assignment_id}
-                onClick={() => handleRowClick(assignment)}
-              >
-                <StyledTableCell>
-                  {assignment.project.requester_name}
-                </StyledTableCell>
-                <StyledTableCell>{assignment.project.title}</StyledTableCell>
-                <StyledTableCell>
-                  $
-                  {assignment.project.monetary_reward.amount_in_dollars.toFixed(
-                    2
-                  )}
-                </StyledTableCell>
+              <StyledTableRow key={assignment.assignment_id}>
+                <StyledTableCell>{assignment.project.requester_name}</StyledTableCell>
+                <TitleCell onClick={() => handleRowClick(assignment)} title={assignment.project.title}>
+                  {assignment.project.title}
+                </TitleCell>
+                <StyledTableCell>${assignment.project.monetary_reward.amount_in_dollars.toFixed(2)}</StyledTableCell>
                 <StyledTableCell>
                   <div style={{ marginBottom: "4px" }}>
-                    {formatDistanceToNowStrict(new Date(assignment.deadline), {
-                      addSuffix: true,
-                    })}
+                    {formatDistanceToNowStrict(new Date(assignment.deadline), { addSuffix: true })}
                   </div>
-                  <Progress
-                    value={calculateTimeRemainingPercentage(
-                      assignment.deadline,
-                      assignmentDurationInSeconds
-                    )}
-                    size="xs"
-                    color="blue"
-                  />
+                  <Progress value={calculateTimeRemainingPercentage(assignment.deadline, duration)} size="xs" color="blue" />
+                </StyledTableCell>
+                <StyledTableCell>
+                  <Tooltip label="Return HIT" position="left" styles={tooltipStyles(theme)}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      size="sm"
+                      onClick={(e) => handleReturnClick(e, assignment)}
+                    >
+                      <IconArrowBack size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                 </StyledTableCell>
               </StyledTableRow>
             );
           })}
         </tbody>
       </StyledTable>
+
+      <YesNoModal
+        isOpen={returnModalOpen}
+        onClose={() => setReturnModalOpen(false)}
+        onConfirm={handleConfirmReturn}
+        message={returnModalMessage}
+        confirmLabel="Return"
+        cancelLabel="Cancel"
+      />
     </>
   );
 };

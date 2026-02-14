@@ -24,12 +24,8 @@ interface HitItemProps {
 }
 
 const fadeIn = keyframes`
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 `;
 
 const HitItemWrapper = styled.div<{ unavailable?: boolean }>`
@@ -124,16 +120,6 @@ const RequesterInfo = styled.div`
   }
 `;
 
-const Indicator = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: ${(props) => props.theme.fontSizes.md};
-  padding: ${(props) => props.theme.spacing.xxs};
-  border-radius: 4px;
-  height: 40px;
-`;
-
 const StyledButton = styled.a<{ isVisible: boolean }>`
   color: ${(props) => props.theme.colors.primary[9]};
   padding: 0;
@@ -153,37 +139,17 @@ const StyledButton = styled.a<{ isVisible: boolean }>`
   }
 `;
 
-const IconOrText = styled.span`
-  display: block;
-  transition: opacity 0.3s;
-`;
-
 const AddToQueueIcon = styled(MdOutlineQueuePlayNext)`
   transition: opacity 0.3s;
-
-  ${StyledButton}:hover & {
-    opacity: 0;
-  }
-`;
-
-const DoneIndicator = styled(Indicator)`
-  color: ${(props) => props.theme.colors.primary[7]};
-`;
-
-const InQueueIndicator = styled(Indicator)`
-  color: ${(props) => props.theme.colors.secondary[7]};
+  ${StyledButton}:hover & { opacity: 0; }
 `;
 
 const IconButton = styled.div<{ active?: boolean; scoopType?: "scoop" | "shovel" }>`
   cursor: pointer;
   color: ${(props) => {
     if (props.active) {
-      if (props.scoopType === "scoop") {
-        return props.theme.other.scoopIconColor || props.theme.colors.secondary[0];
-      }
-      if (props.scoopType === "shovel") {
-        return props.theme.other.shovelIconColor || props.theme.colors.secondary[2];
-      }
+      if (props.scoopType === "scoop") return props.theme.other.scoopIconColor || props.theme.colors.secondary[0];
+      if (props.scoopType === "shovel") return props.theme.other.shovelIconColor || props.theme.colors.secondary[2];
     }
     return props.theme.colors.primary[7];
   }};
@@ -191,20 +157,14 @@ const IconButton = styled.div<{ active?: boolean; scoopType?: "scoop" | "shovel"
   opacity: ${(props) => (props.active ? "1" : "0.3")};
 
   &:hover {
-    color: ${(props) =>
-      props.active
-        ? props.theme.other.favoriteIcon
-        : props.theme.colors.primary[8]};
+    color: ${(props) => props.active ? props.theme.other.favoriteIcon : props.theme.colors.primary[8]};
   }
 `;
 
 const DeleteIcon = styled(IconX)`
   cursor: pointer;
   color: ${(props) => props.theme.other.buttonColor};
-
-  &:hover {
-    color: ${(props) => props.theme.other.buttonHoverColor};
-  }
+  &:hover { color: ${(props) => props.theme.other.buttonHoverColor}; }
 `;
 
 const LastSeenInfo = styled.div`
@@ -213,11 +173,21 @@ const LastSeenInfo = styled.div`
   color: ${(props) => props.theme.colors.primary[9]};
   display: flex;
   align-items: center;
-
-  & > svg {
-    margin-right: ${(props) => props.theme.spacing.xxs};
-  }
+  & > svg { margin-right: ${(props) => props.theme.spacing.xxs}; }
 `;
+
+const TOOLTIP_STYLE = { color: undefined as unknown as string, backgroundColor: undefined as unknown as string };
+
+const getHourlyRateColor = (hourlyRate: string | undefined, colors: string[]): string => {
+  if (!hourlyRate) return "transparent";
+  const rateValue = parseFloat(hourlyRate.replace(/[^0-9.-]+/g, ""));
+  if (isNaN(rateValue)) return "transparent";
+  if (rateValue < 5) return colors[0];
+  if (rateValue < 10) return colors[3];
+  if (rateValue < 15) return colors[5];
+  if (rateValue < 20) return colors[7];
+  return colors[9];
+};
 
 export const HitItem: React.FC<HitItemProps> = ({
   hit,
@@ -228,144 +198,63 @@ export const HitItem: React.FC<HitItemProps> = ({
   const [isButtonVisible, setButtonVisible] = useState(true);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
 
-  const { acceptHit, deleteHit } = useStore(
-    useCallback(
-      (state) => ({
-        acceptHit: state.acceptHit,
-        deleteHit: state.deleteHit,
-      }),
-      []
-    )
+  const { acceptHit, deleteHit, addOrUpdateHit, addHitToAccept, removeHitFromAccept, favoriteRequesters } = useStore(
+    useCallback((state) => ({
+      acceptHit: state.acceptHit,
+      deleteHit: state.deleteHit,
+      addOrUpdateHit: state.addOrUpdateHit,
+      addHitToAccept: state.addHitToAccept,
+      removeHitFromAccept: state.removeHitFromAccept,
+      favoriteRequesters: state.favoriteRequesters,
+    }), [])
   );
 
-  const { blockRequester, toggleFavoriteRequester, favoriteRequesters } =
-    useStore(
-      useCallback(
-        (state) => ({
-          blockRequester: state.blockRequester,
-          toggleFavoriteRequester: state.toggleFavoriteRequester,
-          favoriteRequesters: state.favoriteRequesters,
-        }),
-        []
-      )
-    );
+  const handleScoopToggle = useCallback((scoopType: "scoop" | "shovel" | undefined) => {
+    const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
+    addOrUpdateHit({ ...hit, scoop: updatedScoop });
+    if (updatedScoop) {
+      addHitToAccept({ ...hit, scoop: updatedScoop });
+    } else {
+      removeHitFromAccept(hit.hit_set_id);
+    }
+  }, [hit, addOrUpdateHit, addHitToAccept, removeHitFromAccept]);
 
-  const { addOrUpdateHit, addHitToAccept, removeHitFromAccept } = useStore(
-    useCallback(
-      (state) => ({
-        addOrUpdateHit: state.addOrUpdateHit,
-        addHitToAccept: state.addHitToAccept,
-        removeHitFromAccept: state.removeHitFromAccept,
-      }),
-      []
-    )
-  );
-
-  const handleScoopToggle = useCallback(
-    async (scoopType: "scoop" | "shovel" | undefined) => {
-      const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
-      addOrUpdateHit({ ...hit, scoop: updatedScoop });
-      if (updatedScoop) {
-        addHitToAccept({ ...hit, scoop: updatedScoop });
-      } else {
-        removeHitFromAccept(hit.hit_set_id);
-      }
-    },
-    [hit, addOrUpdateHit, addHitToAccept, removeHitFromAccept]
-  );
-
-  const handleAcceptHit = useCallback(async () => {
+  const handleAcceptHit = useCallback(() => {
     if (hit.caller_meets_requirements) {
       setButtonVisible(false);
-      await acceptHit(hit);
-      setTimeout(() => {
-        setButtonVisible(true);
-      }, 2000);
+      acceptHit(hit);
+      setTimeout(() => setButtonVisible(true), 2000);
     } else if (hit.qualifications?.length) {
-      const qualification = hit.qualifications.find(
-        (q) => q.caller_meets_requirement === false
-      );
-      if (qualification && qualification.qualification_request_url) {
-        window.open(
-          `https://worker.mturk.com${qualification.qualification_request_url}`,
-          "_blank"
-        );
+      const qualification = hit.qualifications.find((q) => !q.caller_meets_requirement);
+      if (qualification?.qualification_request_url) {
+        window.open(`https://worker.mturk.com${qualification.qualification_request_url}`, "_blank");
       }
     }
   }, [acceptHit, hit]);
 
-  const handleDeleteHit = useCallback(async () => {
+  const handleDeleteHit = useCallback(() => {
     deleteHit(hit.hit_set_id);
     setDeleteModalOpen(false);
   }, [hit.hit_set_id, deleteHit]);
 
-  const cleanTitle = useMemo(() => {
-    return hit.title.replace(/\s*\(.*?\)\s*/g, " ").trim();
-  }, [hit.title]);
-
+  const cleanTitle = useMemo(() => hit.title.replace(/\s*\(.*?\)\s*/g, " ").trim(), [hit.title]);
+  
   const bulletPoints = useMemo(() => {
-    const regex = /\((.*?)\)/g;
-    const matches = [];
-    let match;
-    while ((match = regex.exec(hit.title)) !== null) {
-      matches.push(match[1]);
-    }
-    return matches;
+    const matches = hit.title.match(/\((.*?)\)/g);
+    return matches ? matches.map(m => m.slice(1, -1)) : [];
   }, [hit.title]);
 
-  const hourlyRateColor = useMemo(() => {
-    if (!hit.hourlyRate) return "transparent";
-    const rateValue = parseFloat(hit.hourlyRate.replace(/[^0-9.-]+/g, ""));
-    if (isNaN(rateValue)) {
-      return "transparent";
-    } else if (rateValue < 5) {
-      return theme.other.hourlyRateColors[0];
-    } else if (rateValue < 10) {
-      return theme.other.hourlyRateColors[3];
-    } else if (rateValue < 15) {
-      return theme.other.hourlyRateColors[5];
-    } else if (rateValue < 20) {
-      return theme.other.hourlyRateColors[7];
-    } else {
-      return theme.other.hourlyRateColors[9];
-    }
-  }, [hit.hourlyRate, theme.other.hourlyRateColors]);
-
-  const isFavorite = useMemo(() => {
-    return favoriteRequesters.some((r) => r.id === hit.requester_id);
-  }, [favoriteRequesters, hit.requester_id]);
-
-  const handleDeleteIconClick = () => {
-    setDeleteModalOpen(true);
-  };
-
-  const deleteModalMessage = (
-    <div>
-      <p>Are you sure you want to delete this HIT?</p>
-      <HitItemWrapper unavailable={hit.unavailable}>
-        <TopSection>
-          <LeftSection>
-            <RewardPanel rateColor={hourlyRateColor}>
-              <RewardAmount>
-                ${hit.monetary_reward.amount_in_dollars.toFixed(2)}
-              </RewardAmount>
-              {!hideRequester && <HourlyRate>{hit.hourlyRate}</HourlyRate>}
-            </RewardPanel>
-          </LeftSection>
-          <HitInfo>
-            <StyledTitle order={5}>{cleanTitle}</StyledTitle>
-            {bulletPoints.length > 0 && (
-              <BulletPoints>
-                {bulletPoints.map((point, index) => (
-                  <li key={index}>{point}</li>
-                ))}
-              </BulletPoints>
-            )}
-          </HitInfo>
-        </TopSection>
-      </HitItemWrapper>
-    </div>
+  const hourlyRateColor = useMemo(
+    () => getHourlyRateColor(hit.hourlyRate, theme.other.hourlyRateColors),
+    [hit.hourlyRate, theme.other.hourlyRateColors]
   );
+
+  const isFavorite = useMemo(
+    () => favoriteRequesters.some((r) => r.id === hit.requester_id),
+    [favoriteRequesters, hit.requester_id]
+  );
+
+  const tooltipStyle = { ...TOOLTIP_STYLE, color: theme.colors.primary[8], backgroundColor: theme.other.hitBackground };
 
   return (
     <>
@@ -373,9 +262,7 @@ export const HitItem: React.FC<HitItemProps> = ({
         <TopSection>
           <LeftSection>
             <RewardPanel rateColor={hourlyRateColor}>
-              <RewardAmount>
-                ${hit.monetary_reward.amount_in_dollars.toFixed(2)}
-              </RewardAmount>
+              <RewardAmount>${hit.monetary_reward.amount_in_dollars.toFixed(2)}</RewardAmount>
               {!hideRequester && <HourlyRate>{hit.hourlyRate}</HourlyRate>}
             </RewardPanel>
           </LeftSection>
@@ -383,58 +270,27 @@ export const HitItem: React.FC<HitItemProps> = ({
             <StyledTitle order={5}>{cleanTitle}</StyledTitle>
             {bulletPoints.length > 0 && (
               <BulletPoints>
-                {bulletPoints.map((point, index) => (
-                  <li key={index}>{point}</li>
-                ))}
+                {bulletPoints.map((point, index) => <li key={index}>{point}</li>)}
               </BulletPoints>
             )}
           </HitInfo>
           {hit.unavailable ? (
-            <DeleteIcon onClick={handleDeleteIconClick} />
+            <DeleteIcon onClick={() => setDeleteModalOpen(true)} />
           ) : (
             <StyledButton onClick={handleAcceptHit} isVisible={isButtonVisible}>
-              <IconOrText>
-                {hit.caller_meets_requirements ? (
-                  <AddToQueueIcon size={20} />
-                ) : (
-                  "Qualify"
-                )}
-              </IconOrText>
+              {hit.caller_meets_requirements ? <AddToQueueIcon size={20} /> : "Qualify"}
             </StyledButton>
           )}
         </TopSection>
         <BottomSection>
           <div style={{ display: "flex", gap: theme.spacing.sm }}>
-            <Tooltip
-              label="Scoop HIT"
-              position="bottom"
-              style={{
-                color: theme.colors.primary[8],
-                backgroundColor: theme.other.hitBackground,
-              }}
-            >
-              <IconButton
-                active={hit.scoop === "scoop"}
-                scoopType="scoop"
-                onClick={() => handleScoopToggle("scoop")}
-                style={{ transform: "scaleX(-1)" }}
-              >
+            <Tooltip label="Scoop HIT" position="bottom" style={tooltipStyle}>
+              <IconButton active={hit.scoop === "scoop"} scoopType="scoop" onClick={() => handleScoopToggle("scoop")} style={{ transform: "scaleX(-1)" }}>
                 <GiSpoon size={24} />
               </IconButton>
             </Tooltip>
-            <Tooltip
-              label="Shovel HIT"
-              position="bottom"
-              style={{
-                color: theme.colors.primary[8],
-                backgroundColor: theme.other.hitBackground,
-              }}
-            >
-              <IconButton
-                active={hit.scoop === "shovel"}
-                scoopType="shovel"
-                onClick={() => handleScoopToggle("shovel")}
-              >
+            <Tooltip label="Shovel HIT" position="bottom" style={tooltipStyle}>
+              <IconButton active={hit.scoop === "shovel"} scoopType="shovel" onClick={() => handleScoopToggle("shovel")}>
                 <TbShovel size={24} />
               </IconButton>
             </Tooltip>
@@ -443,11 +299,7 @@ export const HitItem: React.FC<HitItemProps> = ({
             <RequesterInfo onClick={() => onRequesterClick?.(hit.requester_id)}>
               {hit.requester_name}{" "}
               {isFavorite ? (
-                <IconStarFilled
-                  size={18}
-                  color={theme.other.favoriteIcon}
-                  style={{ position: "relative", top: "3px" }}
-                />
+                <IconStarFilled size={18} color={theme.other.favoriteIcon} style={{ position: "relative", top: "3px" }} />
               ) : (
                 <IconUser size={18} />
               )}
@@ -457,11 +309,7 @@ export const HitItem: React.FC<HitItemProps> = ({
         {hit.unavailable && hit.last_updated_time && (
           <LastSeenInfo>
             <IconAlertCircle size={16} />
-            Last seen: {format(new Date(hit.last_updated_time), "PPPpp")} (
-            {formatDistanceToNow(new Date(hit.last_updated_time), {
-              addSuffix: true,
-            })}
-            )
+            Last seen: {format(new Date(hit.last_updated_time), "PPPpp")} ({formatDistanceToNow(new Date(hit.last_updated_time), { addSuffix: true })})
           </LastSeenInfo>
         )}
       </HitItemWrapper>
@@ -470,7 +318,7 @@ export const HitItem: React.FC<HitItemProps> = ({
         isOpen={isDeleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={handleDeleteHit}
-        message={deleteModalMessage}
+        message={<div><p>Are you sure you want to delete this HIT?</p><HitItemWrapper unavailable={hit.unavailable}><TopSection><LeftSection><RewardPanel rateColor={hourlyRateColor}><RewardAmount>${hit.monetary_reward.amount_in_dollars.toFixed(2)}</RewardAmount>{!hideRequester && <HourlyRate>{hit.hourlyRate}</HourlyRate>}</RewardPanel></LeftSection><HitInfo><StyledTitle order={5}>{cleanTitle}</StyledTitle>{bulletPoints.length > 0 && (<BulletPoints>{bulletPoints.map((point, index) => <li key={index}>{point}</li>)}</BulletPoints>)}</HitInfo></TopSection></HitItemWrapper></div>}
       />
     </>
   );

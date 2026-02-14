@@ -155,4 +155,12 @@ export interface IHitSpoonerStoreState {
    * @param page - The page number to set.
    */
   setHitsPage: (page: number) => void;
+
+  /**
+   * Function to return a HIT assignment.
+   *
+   * @param assignment - The HIT assignment to return.
+   * @returns A promise that resolves when the HIT is returned.
+   */
+  returnHit: (assignment: IHitAssignment) => Promise<void>;
 }

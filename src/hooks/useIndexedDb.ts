@@ -4,144 +4,82 @@ import { openDB, IDBPDatabase } from "idb";
 const DB_NAME = "hit-spooner-db";
 const STORE_NAME = "hits";
 
-async function getDb(): Promise<IDBPDatabase> {
-  return openDB(DB_NAME, 1, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "hit_set_id" });
-      }
-    },
-  });
-}
+let dbPromise: Promise<IDBPDatabase> | null = null;
+
+const getDb = (): Promise<IDBPDatabase> => {
+  if (!dbPromise) {
+    dbPromise = openDB(DB_NAME, 1, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: "hit_set_id" });
+        }
+      },
+    });
+  }
+  return dbPromise;
+};
 
 export const clearAllHits = async (): Promise<void> => {
   const db = await getDb();
   const tx = db.transaction(STORE_NAME, "readwrite");
-  const store = tx.objectStore(STORE_NAME);
-  await store.clear();
+  await tx.store.clear();
   await tx.done;
 };
 
-/**
- * Adds or updates a HIT in IndexedDB with relaxed durability. If the HIT
- * already exists, it updates it; otherwise, it adds it.
- *
- * @param {IHitProject} hit - The HIT to add or update.
- * @returns {Promise<void>} - Resolves when the operation is complete.
- */
 export const addOrUpdateHit = async (hit: IHitProject): Promise<void> => {
   const db = await getDb();
-  const tx = db.transaction(STORE_NAME, "readwrite", {
-    durability: "relaxed",
-  });
-  const store = tx.objectStore(STORE_NAME);
-
-  const existingHit = await store.get(hit.hit_set_id);
-
-  if (existingHit) {
-    await store.put({ ...existingHit, ...hit });
-  } else {
-    await store.add(hit);
-  }
-
+  const tx = db.transaction(STORE_NAME, "readwrite", { durability: "relaxed" });
+  const existingHit = await tx.store.get(hit.hit_set_id);
+  await tx.store.put(existingHit ? { ...existingHit, ...hit } : hit);
   await tx.done;
 };
 
 export const addOrUpdateHits = async (hits: IHitProject[]): Promise<void> => {
   const db = await getDb();
-  const tx = db.transaction(STORE_NAME, "readwrite", {
-    durability: "relaxed",
-  });
-  const store = tx.objectStore(STORE_NAME);
-
+  const tx = db.transaction(STORE_NAME, "readwrite", { durability: "relaxed" });
+  const store = tx.store;
+  
   for (const hit of hits) {
     const existingHit = await store.get(hit.hit_set_id);
-    if (existingHit) {
-      await store.put({ ...existingHit, ...hit });
-    } else {
-      await store.add(hit);
-    }
+    await store.put(existingHit ? { ...existingHit, ...hit } : hit);
   }
-
   await tx.done;
 };
 
-/**
- * Loads all HITs from IndexedDB, including unavailable ones.
- *
- * @param {IHitSearchFilter} filters - The filters to apply to the HIT search.
- * @returns {Promise<IHitProject[]>} - The list of HITs.
- */
-export const loadHits = async (
-  filters: IHitSearchFilter
-): Promise<IHitProject[]> => {
+export const loadHits = async (filters: IHitSearchFilter): Promise<IHitProject[]> => {
   const db = await getDb();
   const allHits = await db.getAll(STORE_NAME);
-
-  return allHits.filter((hit) => {
-    let matches = true;
-
-    if (filters.minReward !== undefined) {
-      matches =
-        matches &&
-        hit.monetary_reward?.amount_in_dollars >= parseFloat(filters.minReward);
-    }
-
-    return matches;
-  });
+  const minReward = filters.minReward ? parseFloat(filters.minReward) : 0;
+  
+  return minReward > 0 
+    ? allHits.filter((hit) => hit.monetary_reward?.amount_in_dollars >= minReward)
+    : allHits;
 };
 
-/**
- * Loads HITs from IndexedDB with pagination support.
- *
- * @param {number} page - The page number to load.
- * @param {number} pageSize - The number of HITs per page.
- * @param {IHitSearchFilter} filters - The filters to apply to the HIT search.
- * @returns {Promise<[IHitProject[], number]>} - The HITs for the page and total HIT count.
- */
 export const loadHitsByPage = async (
   page: number,
   pageSize: number,
   filters: IHitSearchFilter
 ): Promise<[IHitProject[], number]> => {
   const allHits = await loadHits(filters);
-
   const startIndex = (page - 1) * pageSize;
-  const paginatedHits = allHits.slice(startIndex, startIndex + pageSize);
-
-  return [paginatedHits, allHits.length];
+  return [allHits.slice(startIndex, startIndex + pageSize), allHits.length];
 };
 
-/**
- * Deletes a HIT from IndexedDB.
- *
- * @param {string} hitId - The ID of the HIT to delete.
- * @returns {Promise<void>} - Resolves when the HIT is deleted.
- */
 export const deleteHit = async (hitId: string): Promise<void> => {
   const db = await getDb();
   const tx = db.transaction(STORE_NAME, "readwrite");
-  const store = tx.objectStore(STORE_NAME);
-
-  await store.delete(hitId);
-
+  await tx.store.delete(hitId);
   await tx.done;
 };
 
-/**
- * Custom hook for interacting with IndexedDB for HITs, including paginated loading.
- *
- * Provides methods to add, update, load, load by page, and delete HITs.
- */
-export const useIndexedDb = () => {
-  return {
-    addOrUpdateHit,
-    addOrUpdateHits,
-    clearAllHits,
-    loadHits,
-    loadHitsByPage,
-    deleteHitFromIndexedDb: deleteHit,
-  };
-};
+export const useIndexedDb = () => ({
+  addOrUpdateHit,
+  addOrUpdateHits,
+  clearAllHits,
+  loadHits,
+  loadHitsByPage,
+  deleteHitFromIndexedDb: deleteHit,
+});
 
 export default useIndexedDb;

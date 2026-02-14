@@ -14,7 +14,9 @@ import BottomBar from "./BottomBar";
 import NoMoreHitsPage from "./NoMoreHitsPage";
 import { initAudioContext } from "../../utils";
 
-// Styled container for the main layout
+const ALERT_HEADING_SELECTOR = "#MainContent > div:nth-child(2) > div > div > div > div.mturk-alert-content > h3";
+const RETURN_BUTTON_SELECTOR = "#MainContent > div.work-pipeline-bottom-bar.m-b-sm > div.action-buttons.text-xs-center > div > form > button";
+
 const MainContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -23,14 +25,6 @@ const MainContainer = styled.div`
   overflow: hidden;
 `;
 
-/**
- * Serves as the root component for the application. It manages the global theme
- * and sets up the structure of the app, including the TopBar, Workspace, and
- * BottomBar.
- *
- * @returns {JSX.Element | null} The rendered application structure with applied
- * themes or null if not a target URL.
- */
 const App: React.FC = () => {
   const { config, startUpdateIntervals, fetchAndUpdateHitsQueue, queue } = useStore();
   const theme = config.themes[config.theme] as EmotionTheme & MantineTheme;
@@ -50,93 +44,52 @@ const App: React.FC = () => {
   const goToNextHitInQueue = useCallback(() => {
     if (queue.length > 0) {
       const nextHit = queue[0];
-      const url = `https://worker.mturk.com/projects/${nextHit.project.hit_set_id}/tasks/${nextHit.task_id}?assignment_id=${nextHit.assignment_id}`;
-      window.location.href = url;
+      window.location.href = `https://worker.mturk.com/projects/${nextHit.project.hit_set_id}/tasks/${nextHit.task_id}?assignment_id=${nextHit.assignment_id}`;
     }
   }, [queue]);
 
   useEffect(() => {
     if (isHitSpoonerUrl) {
       startUpdateIntervals();
-    }
-
-    const checkHitSubmitted = () => {
-      const alertHeading = document.querySelector(
-        "#MainContent > div:nth-child(2) > div > div > div > div.mturk-alert-content > h3"
-      );
-
-      return (
-        alertHeading && alertHeading?.textContent?.trim() === "HIT Submitted"
-      );
-    };
-
-    const checkNoMoreHits = () => {
-      const alertHeading = document.querySelector(
-        "#MainContent > div:nth-child(2) > div > div > div > div.mturk-alert-content > h3"
-      );
-
-      return (
-        alertHeading &&
-        alertHeading?.textContent?.trim() ===
-          "There are no more of these HITs available"
-      );
-    };
-
-    const checkReturnButton = () => {
-      const returnButton = document.querySelector(
-        "#MainContent > div.work-pipeline-bottom-bar.m-b-sm > div.action-buttons.text-xs-center > div > form > button"
-      );
-      return returnButton && returnButton?.textContent?.trim() === "Return";
-    };
-
-    if (isHitSpoonerUrl) {
       return;
     }
 
-    if (checkHitSubmitted()) {
-      if (checkReturnButton()) {
-        setShowHitComplete(false);
-      } else {
-        setShowHitComplete(true);
-        fetchAndUpdateHitsQueue();
-      }
-    } else if (checkNoMoreHits()) {
-      setShowNoMoreHits(true);
-      fetchAndUpdateHitsQueue();
-    }
+    const getAlertText = () => 
+      document.querySelector(ALERT_HEADING_SELECTOR)?.textContent?.trim();
 
-    const observer = new MutationObserver(() => {
-      if (checkHitSubmitted()) {
-        if (checkReturnButton()) {
+    const hasReturnButton = () => 
+      document.querySelector(RETURN_BUTTON_SELECTOR)?.textContent?.trim() === "Return";
+
+    const checkConditions = () => {
+      const alertText = getAlertText();
+      
+      if (alertText === "HIT Submitted") {
+        if (hasReturnButton()) {
           setShowHitComplete(false);
         } else {
           setShowHitComplete(true);
           fetchAndUpdateHitsQueue();
         }
-      } else if (checkNoMoreHits()) {
+      } else if (alertText === "There are no more of these HITs available") {
         setShowNoMoreHits(true);
         fetchAndUpdateHitsQueue();
       }
-    });
+    };
+
+    checkConditions();
 
     const mainContent = document.querySelector("#MainContent");
-    if (mainContent) {
-      observer.observe(mainContent, {
-        childList: true,
-        subtree: true,
-      });
-    }
+    if (!mainContent) return;
 
-    return () => {
-      observer.disconnect();
-    };
+    const observer = new MutationObserver(checkConditions);
+    observer.observe(mainContent, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
   }, [isHitSpoonerUrl, startUpdateIntervals, fetchAndUpdateHitsQueue]);
 
   useEffect(() => {
     if (showHitComplete && queue.length > 0) {
-      const timer = setTimeout(() => {
-        goToNextHitInQueue();
-      }, 1500);
+      const timer = setTimeout(goToNextHitInQueue, 1500);
       return () => clearTimeout(timer);
     }
   }, [showHitComplete, queue, goToNextHitInQueue]);

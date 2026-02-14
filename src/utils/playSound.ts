@@ -7,15 +7,15 @@ export const soundOptions: { value: SoundType; label: string }[] = [
   { value: "pop", label: "Pop" },
 ];
 
-const sampleRate = 44100;
+const SAMPLE_RATE = 44100;
 
 const generateWavBase64 = (samples: number[]): string => {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
   
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
     }
   };
   
@@ -26,8 +26,8 @@ const generateWavBase64 = (samples: number[]): string => {
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
+  view.setUint32(24, SAMPLE_RATE, true);
+  view.setUint32(28, SAMPLE_RATE * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeString(36, 'data');
@@ -48,34 +48,17 @@ const generateWavBase64 = (samples: number[]): string => {
   return btoa(binary);
 };
 
-const generateTone = (
-  frequency: number,
-  duration: number,
-  volume: number = 0.5
-): number[] => {
-  const samples: number[] = [];
-  const numSamples = Math.floor(sampleRate * duration);
-  
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const envelope = Math.exp(-t * 5) * volume;
-    samples.push(Math.sin(2 * Math.PI * frequency * t) * envelope);
-  }
-  
-  return samples;
-};
-
 const generateChimeSound = (): string => {
   const freqs = [880, 1109, 1319];
   const samples: number[] = [];
   const duration = 0.4;
-  const totalSamples = Math.floor(sampleRate * (duration + 0.2));
+  const totalSamples = Math.floor(SAMPLE_RATE * (duration + 0.2));
   
   for (let i = 0; i < totalSamples; i++) {
     let sample = 0;
     for (let j = 0; j < freqs.length; j++) {
       const delay = j * 0.1;
-      const t = i / sampleRate - delay;
+      const t = i / SAMPLE_RATE - delay;
       if (t >= 0 && t < duration) {
         const envelope = Math.exp(-t * 5) * 0.3;
         sample += Math.sin(2 * Math.PI * freqs[j] * t) * envelope;
@@ -90,10 +73,10 @@ const generateChimeSound = (): string => {
 const generateCoinSound = (): string => {
   const samples: number[] = [];
   const duration = 0.35;
-  const numSamples = Math.floor(sampleRate * duration);
+  const numSamples = Math.floor(SAMPLE_RATE * duration);
   
   for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
+    const t = i / SAMPLE_RATE;
     let sample = 0;
     
     if (t < 0.15) {
@@ -119,11 +102,11 @@ const generateBellSound = (): string => {
   const freqs = [523, 659, 784];
   const samples: number[] = [];
   const duration = 0.7;
-  const totalSamples = Math.floor(sampleRate * duration);
+  const totalSamples = Math.floor(SAMPLE_RATE * duration);
   
   for (let i = 0; i < totalSamples; i++) {
     let sample = 0;
-    const t = i / sampleRate;
+    const t = i / SAMPLE_RATE;
     
     for (let j = 0; j < freqs.length; j++) {
       const envelope = Math.exp(-t * 3) * 0.2;
@@ -139,10 +122,10 @@ const generateBellSound = (): string => {
 const generatePopSound = (): string => {
   const samples: number[] = [];
   const duration = 0.12;
-  const numSamples = Math.floor(sampleRate * duration);
+  const numSamples = Math.floor(SAMPLE_RATE * duration);
   
   for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
+    const t = i / SAMPLE_RATE;
     const freq = 400 * Math.exp(-t * 20);
     const envelope = Math.exp(-t * 15) * 0.4;
     samples.push(Math.sin(2 * Math.PI * freq * t) * envelope);
@@ -182,57 +165,47 @@ let audioUnlocked = false;
 const unlockAudio = (): void => {
   if (audioUnlocked) return;
   
-  console.log("[playSound] Unlocking audio...");
   const audio = new Audio(`data:audio/wav;base64,${getSilentSound()}`);
   audio.volume = 0.01;
   audio.play()
-    .then(() => {
-      audioUnlocked = true;
-      console.log("[playSound] Audio unlocked successfully");
-    })
-    .catch((e) => {
-      console.log("[playSound] Audio unlock failed:", e.message);
-    });
+    .then(() => { audioUnlocked = true; })
+    .catch(() => {});
 };
 
-export const playChime = (): void => {
-  unlockAudio();
-  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64('chime')}`);
-  audio.volume = 0.6;
-  audio.play().catch(e => console.error('[playSound] Chime play failed:', e));
+const isAutoplayBlocked = (e: unknown): boolean => {
+  if (e instanceof DOMException) {
+    return e.name === 'NotAllowedError' || e.name === 'NotSupportedError';
+  }
+  if (e instanceof Error) {
+    return e.name === 'NotAllowedError' || 
+           e.message.includes('autoplay') || 
+           e.message.includes('user gesture') ||
+           e.message.includes('NotAllowedError');
+  }
+  return false;
 };
 
-export const playCoin = (): void => {
-  unlockAudio();
-  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64('coin')}`);
-  audio.volume = 0.6;
-  audio.play().catch(e => console.error('[playSound] Coin play failed:', e));
-};
+const DEFAULT_VOLUME = 0.6;
 
-export const playBell = (): void => {
-  unlockAudio();
-  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64('bell')}`);
-  audio.volume = 0.6;
-  audio.play().catch(e => console.error('[playSound] Bell play failed:', e));
-};
-
-export const playPop = (): void => {
-  unlockAudio();
-  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64('pop')}`);
-  audio.volume = 0.6;
-  audio.play().catch(e => console.error('[playSound] Pop play failed:', e));
+const createAudioPlayer = (type: SoundType): HTMLAudioElement => {
+  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64(type)}`);
+  audio.volume = DEFAULT_VOLUME;
+  return audio;
 };
 
 export const playSound = (soundType: SoundType): void => {
-  console.log("[playSound] Playing sound:", soundType, "audioUnlocked:", audioUnlocked);
   unlockAudio();
-  const audio = new Audio(`data:audio/wav;base64,${getSoundBase64(soundType)}`);
-  audio.volume = 0.6;
-  audio.play().catch(e => console.error('[playSound] Play failed:', e));
+  createAudioPlayer(soundType).play().catch(e => {
+    if (!isAutoplayBlocked(e)) console.error('[playSound] Play failed:', e);
+  });
 };
 
+export const playChime = (): void => playSound('chime');
+export const playCoin = (): void => playSound('coin');
+export const playBell = (): void => playSound('bell');
+export const playPop = (): void => playSound('pop');
+
 export const announceHitCaught = (soundType: SoundType = "chime"): void => {
-  console.log("[playSound] announceHitCaught called with soundType:", soundType);
   playSound(soundType);
 };
 
@@ -241,10 +214,7 @@ export const initAudioContext = (): void => {
 };
 
 if (typeof window !== 'undefined') {
-  const unlockOnInteraction = () => {
-    unlockAudio();
-  };
-  
+  const unlockOnInteraction = () => unlockAudio();
   document.addEventListener('click', unlockOnInteraction, true);
   document.addEventListener('keydown', unlockOnInteraction, true);
   document.addEventListener('touchstart', unlockOnInteraction, true);
