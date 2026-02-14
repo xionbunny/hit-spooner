@@ -5,7 +5,7 @@ import {
 import styled from "@emotion/styled";
 import { MantineProvider, MantineTheme } from "@mantine/core";
 import "@mantine/core/styles.css";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Workspace from "../workspace/Workspace";
 import HitCompletePage from "./HitCompletePage";
 import { useStore } from "../../hooks";
@@ -31,25 +31,30 @@ const MainContainer = styled.div`
  * themes or null if not a target URL.
  */
 const App: React.FC = () => {
-  const { config, startUpdateIntervals } = useStore();
+  const { config, startUpdateIntervals, fetchAndUpdateHitsQueue, queue } = useStore();
   const theme = config.themes[config.theme] as EmotionTheme & MantineTheme;
 
-  // Determine if the current URL is a HitSpooner URL
   const isHitSpoonerUrl = useMemo(
     () => window.location.href.includes("hit-spooner"),
     []
   );
 
-  // State to track whether to show HitCompletePage or NoMoreHitsPage.
   const [showHitComplete, setShowHitComplete] = useState(false);
   const [showNoMoreHits, setShowNoMoreHits] = useState(false);
+
+  const goToNextHitInQueue = useCallback(() => {
+    if (queue.length > 0) {
+      const nextHit = queue[0];
+      const url = `https://worker.mturk.com/projects/${nextHit.project.hit_set_id}/tasks/${nextHit.task_id}?assignment_id=${nextHit.assignment_id}`;
+      window.location.href = url;
+    }
+  }, [queue]);
 
   useEffect(() => {
     if (isHitSpoonerUrl) {
       startUpdateIntervals();
     }
 
-    // Function to check if the HIT Submitted message is present.
     const checkHitSubmitted = () => {
       const alertHeading = document.querySelector(
         "#MainContent > div:nth-child(2) > div > div > div > div.mturk-alert-content > h3"
@@ -60,7 +65,6 @@ const App: React.FC = () => {
       );
     };
 
-    // Function to check if the "No More HITs" message is present.
     const checkNoMoreHits = () => {
       const alertHeading = document.querySelector(
         "#MainContent > div:nth-child(2) > div > div > div > div.mturk-alert-content > h3"
@@ -73,7 +77,6 @@ const App: React.FC = () => {
       );
     };
 
-    // Function to check if the "Return" button is present.
     const checkReturnButton = () => {
       const returnButton = document.querySelector(
         "#MainContent > div.work-pipeline-bottom-bar.m-b-sm > div.action-buttons.text-xs-center > div > form > button"
@@ -90,9 +93,11 @@ const App: React.FC = () => {
         setShowHitComplete(false);
       } else {
         setShowHitComplete(true);
+        fetchAndUpdateHitsQueue();
       }
     } else if (checkNoMoreHits()) {
       setShowNoMoreHits(true);
+      fetchAndUpdateHitsQueue();
     }
 
     const observer = new MutationObserver(() => {
@@ -101,9 +106,11 @@ const App: React.FC = () => {
           setShowHitComplete(false);
         } else {
           setShowHitComplete(true);
+          fetchAndUpdateHitsQueue();
         }
       } else if (checkNoMoreHits()) {
         setShowNoMoreHits(true);
+        fetchAndUpdateHitsQueue();
       }
     });
 
@@ -118,7 +125,16 @@ const App: React.FC = () => {
     return () => {
       observer.disconnect();
     };
-  }, [isHitSpoonerUrl, startUpdateIntervals]);
+  }, [isHitSpoonerUrl, startUpdateIntervals, fetchAndUpdateHitsQueue]);
+
+  useEffect(() => {
+    if (showHitComplete && queue.length > 0) {
+      const timer = setTimeout(() => {
+        goToNextHitInQueue();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showHitComplete, queue, goToNextHitInQueue]);
 
   if (!showHitComplete && !showNoMoreHits && !isHitSpoonerUrl) {
     return null;

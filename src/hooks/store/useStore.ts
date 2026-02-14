@@ -11,8 +11,8 @@ import {
   newsTheme,
   blueTheme,
 } from "../../styles/themes";
-import { fetchDashboardData } from "../../utils";
-import { useIndexedDb } from "../useIndexedDb";
+import { fetchDashboardData, fetchHITProjects, announceHitCaught, setSpeechVoice, setSpeechRate } from "../../utils";
+import { useIndexedDb, loadHits as loadHitsFromDb } from "../useIndexedDb";
 import { IHitSpoonerStoreState } from "./IHitSpoonerStoreState";
 import { LocalStorageKeys } from "./LocalStorageKeys";
 
@@ -29,7 +29,7 @@ const defaultHitFilters: IHitSearchFilter = {
 };
 
 export const useStore = create<IHitSpoonerStoreState>((set, get) => {
-  const { addOrUpdateHit, loadHitsByPage, deleteHitFromIndexedDb } =
+  const { addOrUpdateHit, addOrUpdateHits, loadHitsByPage, deleteHitFromIndexedDb } =
     useIndexedDb();
   let intervalRef: NodeJS.Timeout | null = null;
 
@@ -221,6 +221,37 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         clearIntervals();
         get().startUpdateIntervals();
       },
+
+      soundEnabled:
+        localStorage.getItem(LocalStorageKeys.SoundEnabled) !== "false",
+      setSoundEnabled: (enabled: boolean) => {
+        localStorage.setItem(LocalStorageKeys.SoundEnabled, String(enabled));
+        set((state) => ({
+          config: { ...state.config, soundEnabled: enabled },
+        }));
+      },
+
+      speechVoiceURI: localStorage.getItem(LocalStorageKeys.SpeechVoiceURI),
+      setSpeechVoiceURI: (voiceURI: string | null) => {
+        if (voiceURI) {
+          localStorage.setItem(LocalStorageKeys.SpeechVoiceURI, voiceURI);
+          setSpeechVoice(voiceURI);
+        } else {
+          localStorage.removeItem(LocalStorageKeys.SpeechVoiceURI);
+        }
+        set((state) => ({
+          config: { ...state.config, speechVoiceURI: voiceURI },
+        }));
+      },
+
+      speechRate: parseFloat(localStorage.getItem(LocalStorageKeys.SpeechRate) || "1.2"),
+      setSpeechRate: (rate: number) => {
+        localStorage.setItem(LocalStorageKeys.SpeechRate, rate.toString());
+        setSpeechRate(rate);
+        set((state) => ({
+          config: { ...state.config, speechRate: rate },
+        }));
+      },
     },
 
     setFilters: (newFilters: IHitSearchFilter) => {
@@ -289,11 +320,28 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       }));
 
       try {
+        const fetchedHits = await fetchHITProjects(filters);
+        const fetchedHitIds = new Set(fetchedHits.map((h) => h.hit_set_id));
+        
+        const allCachedHits = await loadHitsFromDb(filters);
+        
+        for (const cachedHit of allCachedHits) {
+          if (!fetchedHitIds.has(cachedHit.hit_set_id) && !cachedHit.unavailable) {
+            cachedHit.unavailable = true;
+            await addOrUpdateHit(cachedHit);
+          }
+        }
+        
+        if (fetchedHits.length > 0) {
+          await addOrUpdateHits(fetchedHits);
+        }
+
         const [newHits, totalHits] = await loadHitsByPage(
           page,
           pageSize,
           filters
         );
+        
         const blockedRequesters = get().blockedRequesters;
 
         const filteredNewHits = newHits.filter(
@@ -456,6 +504,12 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       const hitToProcess = hitsToAccept[0];
       const { hit_set_id, accept_project_task_url } = hitToProcess;
 
+      const currentHit = get().hits.data?.find((h) => h.hit_set_id === hit_set_id);
+      if (!currentHit?.scoop) {
+        get().removeHitFromAccept(hit_set_id);
+        return;
+      }
+
       try {
         const response = await fetch(`${accept_project_task_url}&format=json`, {
           credentials: "include",
@@ -469,16 +523,23 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }
 
         if (data?.state === "Assigned") {
-          const hit = get().hits.data?.find((h) => h.hit_set_id === hit_set_id);
-
-          switch (hit?.scoop) {
+          if (get().config.soundEnabled && currentHit) {
+            announceHitCaught(
+              currentHit.title,
+              currentHit.monetary_reward?.amount_in_dollars || 0
+            );
+          }
+          switch (currentHit?.scoop) {
             case "scoop":
               get().removeHitFromAccept(hit_set_id);
-              hit.scoop = undefined;
-              await addOrUpdateHit(hit);
+              currentHit.scoop = undefined;
+              currentHit.unavailable = true;
+              await addOrUpdateHit(currentHit);
               break;
 
             case "shovel":
+              currentHit.unavailable = true;
+              await addOrUpdateHit(currentHit);
               hitsToAccept = hitsToAccept.slice(1);
               hitsToAccept.push(hitToProcess);
               set({ hitsToAccept });

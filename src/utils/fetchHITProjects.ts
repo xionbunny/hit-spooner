@@ -15,13 +15,11 @@ export const fetchHITProjects = async (
   let pageNumber = 1;
   const pageSize = filters.pageSize || "50";
 
-  // Function to pause execution for a given amount of time
   const debounce = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
   try {
     while (true) {
-      // Construct the query parameters based on filters and current page.
       const params = new URLSearchParams({
         "filters[qualified]": filters.qualified ? "true" : "false",
         "filters[masters]": filters.masters ? "true" : "false",
@@ -35,33 +33,26 @@ export const fetchHITProjects = async (
       const baseUrl = "https://worker.mturk.com/?";
       const url = `${baseUrl}${params.toString()}`;
 
-      // Perform the API request to fetch the HITs.
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        credentials: "include",
+      });
 
-      // Check if the response is not ok and throw an error if so.
       if (!response.ok) {
         throw new Error("Network response was not ok");
       }
 
-      // Parse the JSON response.
       const data = await response.json();
 
-      // Add the fetched HITs to the cumulative array.
       allHITs = allHITs.concat(data.results);
 
-      // Check if fewer than pageSize HITs were returned, indicating the last page.
       if (data.results.length < parseInt(pageSize)) {
         break;
       }
 
-      // Increment the page number for the next request.
       pageNumber += 1;
-
-      // Debounce between requests.
       await debounce(20);
     }
   } catch (error) {
-    // Log any errors that occur during the fetch process.
     console.error("Error fetching HITs:", error);
     return [];
   }

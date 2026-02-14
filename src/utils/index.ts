@@ -3,3 +3,4 @@ export * from "./fetchHITProjects";
 export * from "./filterHITProjects";
 export * from "./groupByWeek";
 export * from "./safeParseInt";
+export * from "./playSound";

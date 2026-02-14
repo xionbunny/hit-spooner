@@ -85,4 +85,34 @@ export interface IConfigState {
    * Function to set the number of columns for the HitList in the requester modal
    */
   setRequesterModalColumns: (columns: number) => void;
+
+  /**
+   * Whether sound effects are enabled
+   */
+  soundEnabled: boolean;
+
+  /**
+   * Function to toggle sound effects
+   */
+  setSoundEnabled: (enabled: boolean) => void;
+
+  /**
+   * The selected voice URI for text-to-speech
+   */
+  speechVoiceURI: string | null;
+
+  /**
+   * Function to set the speech voice
+   */
+  setSpeechVoiceURI: (voiceURI: string | null) => void;
+
+  /**
+   * The speech rate (0.5 to 2.0)
+   */
+  speechRate: number;
+
+  /**
+   * Function to set the speech rate
+   */
+  setSpeechRate: (rate: number) => void;
 }

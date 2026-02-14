@@ -174,17 +174,27 @@ const InQueueIndicator = styled(Indicator)`
   color: ${(props) => props.theme.colors.secondary[7]};
 `;
 
-const IconButton = styled.div<{ active?: boolean }>`
+const IconButton = styled.div<{ active?: boolean; scoopType?: "scoop" | "shovel" }>`
   cursor: pointer;
-  color: ${(props) =>
-    props.active
-      ? props.theme.colors.secondary[2]
-      : props.theme.colors.primary[7]};
+  color: ${(props) => {
+    if (props.active) {
+      if (props.scoopType === "scoop") {
+        return props.theme.other.scoopIconColor || props.theme.colors.secondary[0];
+      }
+      if (props.scoopType === "shovel") {
+        return props.theme.other.shovelIconColor || props.theme.colors.secondary[2];
+      }
+    }
+    return props.theme.colors.primary[7];
+  }};
   transition: color 0.3s;
-  opacity: ${(props) => (props.active ? "1" : "0.2")};
+  opacity: ${(props) => (props.active ? "1" : "0.3")};
 
   &:hover {
-    color: ${(props) => props.theme.colors.primary[8]};
+    color: ${(props) =>
+      props.active
+        ? props.theme.other.favoriteIcon
+        : props.theme.colors.primary[8]};
   }
 `;
 
@@ -240,10 +250,12 @@ export const HitItem: React.FC<HitItemProps> = ({
       )
     );
 
-  const { addOrUpdateHit } = useStore(
+  const { addOrUpdateHit, addHitToAccept, removeHitFromAccept } = useStore(
     useCallback(
       (state) => ({
         addOrUpdateHit: state.addOrUpdateHit,
+        addHitToAccept: state.addHitToAccept,
+        removeHitFromAccept: state.removeHitFromAccept,
       }),
       []
     )
@@ -253,8 +265,13 @@ export const HitItem: React.FC<HitItemProps> = ({
     async (scoopType: "scoop" | "shovel" | undefined) => {
       const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
       addOrUpdateHit({ ...hit, scoop: updatedScoop });
+      if (updatedScoop) {
+        addHitToAccept({ ...hit, scoop: updatedScoop });
+      } else {
+        removeHitFromAccept(hit.hit_set_id);
+      }
     },
-    [hit, addOrUpdateHit]
+    [hit, addOrUpdateHit, addHitToAccept, removeHitFromAccept]
   );
 
   const handleAcceptHit = useCallback(async () => {
@@ -398,10 +415,11 @@ export const HitItem: React.FC<HitItemProps> = ({
             >
               <IconButton
                 active={hit.scoop === "scoop"}
+                scoopType="scoop"
                 onClick={() => handleScoopToggle("scoop")}
                 style={{ transform: "scaleX(-1)" }}
               >
-                <GiSpoon size={20} />
+                <GiSpoon size={24} />
               </IconButton>
             </Tooltip>
             <Tooltip
@@ -414,9 +432,10 @@ export const HitItem: React.FC<HitItemProps> = ({
             >
               <IconButton
                 active={hit.scoop === "shovel"}
+                scoopType="shovel"
                 onClick={() => handleScoopToggle("shovel")}
               >
-                <TbShovel size={20} />
+                <TbShovel size={24} />
               </IconButton>
             </Tooltip>
           </div>

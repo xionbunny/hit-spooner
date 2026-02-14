@@ -7,8 +7,10 @@ import {
   TextInput,
   Group,
   Paper,
+  Slider,
+  Button,
 } from "@mantine/core";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useStore } from "../../hooks";
 import {
   StyledModal,
@@ -22,6 +24,7 @@ import {
   hitFilterPageSizeOptions,
   hitFilterSortOptions,
 } from "@hit-spooner/api";
+import { getAvailableVoices, testSpeech } from "../../utils";
 
 /**
  * Interface for the SettingsModal component props.
@@ -48,6 +51,37 @@ const updateIntervalOptions = [
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const theme = useTheme();
   const { filters, setFilters, config } = useStore();
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = getAvailableVoices();
+      setVoices(availableVoices);
+    };
+
+    loadVoices();
+    
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (config.speechVoiceURI) {
+      const { setSpeechVoice } = require("../../utils");
+      setSpeechVoice(config.speechVoiceURI);
+    }
+    if (config.speechRate) {
+      const { setSpeechRate } = require("../../utils");
+      setSpeechRate(config.speechRate);
+    }
+  }, [config.speechVoiceURI, config.speechRate]);
 
   const handleThemeChange = (key: ThemeKey | null) => {
     if (key) {
@@ -103,6 +137,61 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             value={config.theme}
             styles={themedInputStyles(theme)}
           />
+        </FormSection>
+
+        {/* Sound Settings */}
+        <FormSection title="Sound & Announcements">
+          <Group
+            align="apart"
+            style={{
+              paddingTop: "10px",
+            }}
+          >
+            <CustomIconCheckbox
+              label="Enable Announcements"
+              name="soundEnabled"
+              checked={config.soundEnabled}
+              onChange={() => config.setSoundEnabled(!config.soundEnabled)}
+            />
+          </Group>
+          
+          {config.soundEnabled && (
+            <>
+              <Select
+                label="Voice"
+                data={voices.map(v => ({ value: v.voiceURI, label: `${v.name} (${v.lang})` }))}
+                placeholder="Select voice"
+                onChange={(value) => config.setSpeechVoiceURI(value)}
+                value={config.speechVoiceURI}
+                styles={themedInputStyles(theme)}
+                mt="sm"
+              />
+              
+              <Box mt="md">
+                <Text size="sm" mb="xs" style={{ color: theme.colors.primary[7] }}>
+                  Speech Rate: {config.speechRate.toFixed(1)}x
+                </Text>
+                <Slider
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  value={config.speechRate}
+                  onChange={(value) => config.setSpeechRate(value)}
+                  label={null}
+                />
+              </Box>
+              
+              <Button
+                variant="light"
+                size="sm"
+                mt="md"
+                onClick={() => testSpeech()}
+                style={{ width: "100%" }}
+              >
+                Test Voice
+              </Button>
+            </>
+          )}
         </FormSection>
 
         {/* Update Interval Selection */}

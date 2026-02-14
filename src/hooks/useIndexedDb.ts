@@ -1,15 +1,10 @@
 import { IHitProject, IHitSearchFilter } from "@hit-spooner/api";
-import { openDB } from "idb";
+import { openDB, IDBPDatabase } from "idb";
 
 const DB_NAME = "hit-spooner-db";
 const STORE_NAME = "hits";
 
-/**
- * Opens the IndexedDB database, creating it if it doesn't exist.
- *
- * @returns {Promise<IDBPDatabase<unknown>>} - The opened database instance.
- */
-async function getDb() {
+async function getDb(): Promise<IDBPDatabase> {
   return openDB(DB_NAME, 1, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -18,6 +13,14 @@ async function getDb() {
     },
   });
 }
+
+export const clearAllHits = async (): Promise<void> => {
+  const db = await getDb();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  await store.clear();
+  await tx.done;
+};
 
 /**
  * Adds or updates a HIT in IndexedDB with relaxed durability. If the HIT
@@ -36,11 +39,28 @@ export const addOrUpdateHit = async (hit: IHitProject): Promise<void> => {
   const existingHit = await store.get(hit.hit_set_id);
 
   if (existingHit) {
-    // Update existing HIT
     await store.put({ ...existingHit, ...hit });
   } else {
-    // Add new HIT
     await store.add(hit);
+  }
+
+  await tx.done;
+};
+
+export const addOrUpdateHits = async (hits: IHitProject[]): Promise<void> => {
+  const db = await getDb();
+  const tx = db.transaction(STORE_NAME, "readwrite", {
+    durability: "relaxed",
+  });
+  const store = tx.objectStore(STORE_NAME);
+
+  for (const hit of hits) {
+    const existingHit = await store.get(hit.hit_set_id);
+    if (existingHit) {
+      await store.put({ ...existingHit, ...hit });
+    } else {
+      await store.add(hit);
+    }
   }
 
   await tx.done;
@@ -58,22 +78,13 @@ export const loadHits = async (
   const db = await getDb();
   const allHits = await db.getAll(STORE_NAME);
 
-  // Apply your filtering logic here based on the filters parameter
   return allHits.filter((hit) => {
     let matches = true;
-
-    if (filters.qualified !== undefined) {
-      matches = matches && hit.qualified === filters.qualified;
-    }
-
-    if (filters.masters !== undefined) {
-      matches = matches && hit.masters === filters.masters;
-    }
 
     if (filters.minReward !== undefined) {
       matches =
         matches &&
-        hit.monetary_reward.amount_in_dollars >= parseFloat(filters.minReward);
+        hit.monetary_reward?.amount_in_dollars >= parseFloat(filters.minReward);
     }
 
     return matches;
@@ -125,6 +136,8 @@ export const deleteHit = async (hitId: string): Promise<void> => {
 export const useIndexedDb = () => {
   return {
     addOrUpdateHit,
+    addOrUpdateHits,
+    clearAllHits,
     loadHits,
     loadHitsByPage,
     deleteHitFromIndexedDb: deleteHit,
