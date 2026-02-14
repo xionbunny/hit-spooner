@@ -18,6 +18,11 @@ import { LocalStorageKeys } from "./LocalStorageKeys";
 
 const MTURK_FETCH_DEBOUNCE_TIME = 80;
 const QUEUE_REFRESH_INTERVAL = 2000;
+const FETCH_TIMEOUT_MS = 15000;
+const MAX_CONSECUTIVE_ERRORS = 5;
+const ERROR_BACKOFF_MULTIPLIER = 1.5;
+
+let globalLastFetchTime = 0;
 
 const defaultHitFilters: IHitSearchFilter = {
   qualified: true,
@@ -51,12 +56,48 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
   let autoAcceptIntervalRef: ReturnType<typeof setInterval> | null = null;
   let dashboardIntervalRef: ReturnType<typeof setInterval> | null = null;
   let queueIntervalRef: ReturnType<typeof setInterval> | null = null;
+  let consecutiveErrors = 0;
+  let currentBackoff = 1;
 
   const clearIntervals = () => {
     if (hitsIntervalRef) clearInterval(hitsIntervalRef);
     if (autoAcceptIntervalRef) clearInterval(autoAcceptIntervalRef);
     if (dashboardIntervalRef) clearInterval(dashboardIntervalRef);
     if (queueIntervalRef) clearInterval(queueIntervalRef);
+  };
+
+  const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  };
+
+  const handleError = (context: string) => {
+    consecutiveErrors++;
+    console.error(`[HitSpooner] ${context} - Error count: ${consecutiveErrors}`);
+    
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      currentBackoff = Math.min(currentBackoff * ERROR_BACKOFF_MULTIPLIER, 5);
+      console.warn(`[HitSpooner] Increasing backoff to ${currentBackoff}x due to repeated errors`);
+    }
+  };
+
+  const handleSuccess = () => {
+    if (consecutiveErrors > 0) {
+      consecutiveErrors = 0;
+      currentBackoff = 1;
+    }
   };
 
   const debouncedAcceptHit = debounce(async (hit: IHitProject) => {
@@ -266,13 +307,28 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     },
 
     togglePause: () => {
-      set((state) => ({
-        paused: !state.paused,
-      }));
+      set((state) => {
+        const newPaused = !state.paused;
+        if (!newPaused) {
+          consecutiveErrors = 0;
+          currentBackoff = 1;
+        }
+        return { paused: newPaused };
+      });
     },
 
     fetchAndUpdateHits: debounce(async (page = 1) => {
       if (get().paused) return;
+      
+      const timeSinceLastFetch = Date.now() - globalLastFetchTime;
+      const minInterval = get().config.updateInterval * currentBackoff;
+      
+      if (timeSinceLastFetch < minInterval * 0.8) {
+        console.log("[HitSpooner] Skipping fetch - too soon since last fetch");
+        return;
+      }
+      
+      globalLastFetchTime = Date.now();
 
       const filters = get().filters;
       const pageSize = filters.pageSize ? parseInt(filters.pageSize) : 50;
@@ -283,6 +339,8 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       try {
         const fetchedHits = await fetchHITProjects(filters);
+        handleSuccess();
+        
         const fetchedHitIds = new Set(fetchedHits.map((h) => h.hit_set_id));
         
         const allCachedHits = await loadHitsFromDb(filters);
@@ -325,13 +383,11 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           },
         });
       } catch (error) {
+        handleError("fetchAndUpdateHits");
         set({
           hits: {
-            data: null,
+            data: get().hits.data,
             loading: false,
-            pageSize: 0,
-            currentPage: 0,
-            total: 0,
             error: "Failed to fetch HITs",
           },
         });
@@ -367,27 +423,29 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     },
 
     fetchAndUpdateHitsQueue: debounce(async () => {
-      const state = get();
-      const previousQueueLength = state.queue.length;
+      const previousQueueLength = get().queue.length;
       set({ loadingQueue: true });
 
       try {
-        const response = await fetch("https://worker.mturk.com/tasks/?format=json", {
-          credentials: "include",
-        });
+        const response = await fetchWithTimeout(
+          "https://worker.mturk.com/tasks/?format=json",
+          { credentials: "include" },
+          FETCH_TIMEOUT_MS
+        );
 
-        if (!response.ok) throw new Error("Failed to fetch queue data.");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
         const newQueue = data.tasks || [];
 
-        if (newQueue.length > previousQueueLength && state.config.soundEnabled) {
-          announceHitCaught(state.config.soundType as SoundType);
+        if (newQueue.length > previousQueueLength && get().config.soundEnabled) {
+          announceHitCaught(get().config.soundType as SoundType);
         }
 
+        handleSuccess();
         set({ queue: newQueue, loadingQueue: false });
       } catch (error) {
-        console.error("Error fetching queue data:", error);
+        handleError("fetchAndUpdateHitsQueue");
         set({ loadingQueue: false });
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
@@ -399,17 +457,19 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       try {
         const dashboardData = await fetchDashboardData();
+        handleSuccess();
         set({
           dashboard: { data: dashboardData, loading: false, error: null },
         });
       } catch (error) {
-        set({
+        handleError("fetchAndUpdateDashboard");
+        set((state) => ({
           dashboard: {
-            data: null,
+            data: state.dashboard.data,
             loading: false,
             error: "Failed to fetch dashboard data",
           },
-        });
+        }));
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
@@ -548,26 +608,30 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     startUpdateIntervals: () => {
       clearIntervals();
 
-      const state = get();
-      const interval = state.config.updateInterval;
+      const interval = get().config.updateInterval;
+      const effectiveInterval = Math.max(interval, 1000);
 
       hitsIntervalRef = setInterval(() => {
-        if (!get().paused) {
-          state.fetchAndUpdateHits();
+        const currentState = get();
+        if (!currentState.paused) {
+          currentState.fetchAndUpdateHits();
         }
-      }, interval);
+      }, effectiveInterval);
 
       autoAcceptIntervalRef = setInterval(() => {
-        if (!get().paused) {
-          state.handleAutomaticAcceptance();
+        const currentState = get();
+        if (!currentState.paused) {
+          currentState.handleAutomaticAcceptance();
         }
-      }, interval);
+      }, effectiveInterval);
 
       dashboardIntervalRef = setInterval(() => {
-        state.fetchAndUpdateDashboard();
-      }, interval * 6);
+        get().fetchAndUpdateDashboard();
+      }, effectiveInterval * 6);
 
-      queueIntervalRef = setInterval(state.fetchAndUpdateHitsQueue, QUEUE_REFRESH_INTERVAL);
+      queueIntervalRef = setInterval(() => {
+        get().fetchAndUpdateHitsQueue();
+      }, QUEUE_REFRESH_INTERVAL);
     },
   };
 });

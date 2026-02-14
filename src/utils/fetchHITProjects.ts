@@ -1,25 +1,38 @@
 import { IHitProject, IHitSearchFilter } from "@hit-spooner/api";
 
-/**
- * Fetches a list of HITs (Human Intelligence Tasks) from the MTurk API based on
- * the provided filters. Continues fetching subsequent pages until fewer than
- * `pageSize` HITs are returned or no HITs are found.
- *
- * @param {IHitSearchFilter} filters - The filters to apply to the HIT search.
- * @returns {Promise<IHitProject[]>} A promise that resolves to an array of HITs.
- */
+const FETCH_TIMEOUT_MS = 15000;
+const PAGE_DELAY_MS = 50;
+
+const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      credentials: "include",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+};
+
 export const fetchHITProjects = async (
   filters: IHitSearchFilter
 ): Promise<IHitProject[]> => {
   let allHITs: IHitProject[] = [];
   let pageNumber = 1;
   const pageSize = filters.pageSize || "50";
+  const maxPages = 10;
 
-  const debounce = (ms: number) =>
+  const delay = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
   try {
-    while (true) {
+    while (pageNumber <= maxPages) {
       const params = new URLSearchParams({
         "filters[qualified]": filters.qualified ? "true" : "false",
         "filters[masters]": filters.masters ? "true" : "false",
@@ -33,15 +46,22 @@ export const fetchHITProjects = async (
       const baseUrl = "https://worker.mturk.com/?";
       const url = `${baseUrl}${params.toString()}`;
 
-      const response = await fetch(url, {
-        credentials: "include",
-      });
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
 
       if (!response.ok) {
-        throw new Error("Network response was not ok");
+        if (response.status === 429) {
+          console.warn("[HitSpooner] Rate limited, waiting before retry...");
+          await delay(2000);
+          continue;
+        }
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+
+      if (!data.results || !Array.isArray(data.results)) {
+        break;
+      }
 
       allHITs = allHITs.concat(data.results);
 
@@ -50,11 +70,15 @@ export const fetchHITProjects = async (
       }
 
       pageNumber += 1;
-      await debounce(20);
+      await delay(PAGE_DELAY_MS);
     }
   } catch (error) {
-    console.error("Error fetching HITs:", error);
-    return [];
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error("[HitSpooner] Fetch timeout");
+    } else {
+      console.error("[HitSpooner] Error fetching HITs:", error);
+    }
+    throw error;
   }
 
   return allHITs;
