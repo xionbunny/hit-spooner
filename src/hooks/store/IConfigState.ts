@@ -97,22 +97,12 @@ export interface IConfigState {
   setSoundEnabled: (enabled: boolean) => void;
 
   /**
-   * The selected voice URI for text-to-speech
+   * The selected sound type for hit caught notifications
    */
-  speechVoiceURI: string | null;
+  soundType: string;
 
   /**
-   * Function to set the speech voice
+   * Function to set the sound type
    */
-  setSpeechVoiceURI: (voiceURI: string | null) => void;
-
-  /**
-   * The speech rate (0.5 to 2.0)
-   */
-  speechRate: number;
-
-  /**
-   * Function to set the speech rate
-   */
-  setSpeechRate: (rate: number) => void;
+  setSoundType: (soundType: string) => void;
 }

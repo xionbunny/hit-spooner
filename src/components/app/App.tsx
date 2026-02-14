@@ -12,6 +12,7 @@ import { useStore } from "../../hooks";
 import GlobalStyles from "../../styles/globalStyles";
 import BottomBar from "./BottomBar";
 import NoMoreHitsPage from "./NoMoreHitsPage";
+import { initAudioContext } from "../../utils";
 
 // Styled container for the main layout
 const MainContainer = styled.div`
@@ -41,6 +42,10 @@ const App: React.FC = () => {
 
   const [showHitComplete, setShowHitComplete] = useState(false);
   const [showNoMoreHits, setShowNoMoreHits] = useState(false);
+
+  useEffect(() => {
+    initAudioContext();
+  }, []);
 
   const goToNextHitInQueue = useCallback(() => {
     if (queue.length > 0) {

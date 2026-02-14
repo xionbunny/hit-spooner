@@ -11,7 +11,7 @@ import {
   newsTheme,
   blueTheme,
 } from "../../styles/themes";
-import { fetchDashboardData, fetchHITProjects, announceHitCaught, setSpeechVoice, setSpeechRate } from "../../utils";
+import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType } from "../../utils";
 import { useIndexedDb, loadHits as loadHitsFromDb } from "../useIndexedDb";
 import { IHitSpoonerStoreState } from "./IHitSpoonerStoreState";
 import { LocalStorageKeys } from "./LocalStorageKeys";
@@ -45,6 +45,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
   };
 
   const debouncedAcceptHit = debounce(async (hit: IHitProject) => {
+    console.log("[debouncedAcceptHit] Called for hit:", hit.hit_set_id, "paused:", get().paused);
     if (get().paused) return;
 
     try {
@@ -55,6 +56,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }
       );
 
+      console.log("[debouncedAcceptHit] Response status:", response.status);
       if (!response.ok) {
         if (response.status === 422) {
           return;
@@ -63,14 +65,20 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       }
 
       const data = await response.json();
+      console.log("[debouncedAcceptHit] Response state:", data?.state);
 
       if (data?.state === "Assigned") {
+        console.log("[debouncedAcceptHit] HIT Assigned! soundEnabled:", get().config.soundEnabled, "soundType:", get().config.soundType);
+        if (get().config.soundEnabled) {
+          console.log("[debouncedAcceptHit] Calling announceHitCaught");
+          announceHitCaught(get().config.soundType as SoundType);
+        }
         hit.unavailable = true;
         await addOrUpdateHit(hit);
         get().removeHitFromAccept(hit.hit_set_id);
       }
     } catch (error) {
-      // Handle network errors silently
+      console.error("[debouncedAcceptHit] Error:", error);
     }
   }, MTURK_FETCH_DEBOUNCE_TIME);
 
@@ -231,25 +239,11 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }));
       },
 
-      speechVoiceURI: localStorage.getItem(LocalStorageKeys.SpeechVoiceURI),
-      setSpeechVoiceURI: (voiceURI: string | null) => {
-        if (voiceURI) {
-          localStorage.setItem(LocalStorageKeys.SpeechVoiceURI, voiceURI);
-          setSpeechVoice(voiceURI);
-        } else {
-          localStorage.removeItem(LocalStorageKeys.SpeechVoiceURI);
-        }
+      soundType: localStorage.getItem(LocalStorageKeys.SoundType) || "chime",
+      setSoundType: (soundType: string) => {
+        localStorage.setItem(LocalStorageKeys.SoundType, soundType);
         set((state) => ({
-          config: { ...state.config, speechVoiceURI: voiceURI },
-        }));
-      },
-
-      speechRate: parseFloat(localStorage.getItem(LocalStorageKeys.SpeechRate) || "1.2"),
-      setSpeechRate: (rate: number) => {
-        localStorage.setItem(LocalStorageKeys.SpeechRate, rate.toString());
-        setSpeechRate(rate);
-        set((state) => ({
-          config: { ...state.config, speechRate: rate },
+          config: { ...state.config, soundType: soundType },
         }));
       },
     },
@@ -405,6 +399,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     },
 
     fetchAndUpdateHitsQueue: debounce(async () => {
+      const previousQueueLength = get().queue.length;
       set({ loadingQueue: true });
 
       try {
@@ -424,9 +419,18 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }
 
         const data = await response.json();
+        const newQueue = data.tasks || [];
+        const newQueueLength = newQueue.length;
+
+        console.log("[fetchAndUpdateHitsQueue] Previous queue:", previousQueueLength, "New queue:", newQueueLength);
+        
+        if (newQueueLength > previousQueueLength && get().config.soundEnabled) {
+          console.log("[fetchAndUpdateHitsQueue] Queue increased! Playing sound");
+          announceHitCaught(get().config.soundType as SoundType);
+        }
 
         set({
-          queue: data.tasks || [],
+          queue: newQueue,
           loadingQueue: false,
         });
       } catch (error) {
@@ -496,6 +500,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
     handleAutomaticAcceptance: debounce(async () => {
+      console.log("[handleAutomaticAcceptance] Called, paused:", get().paused, "hitsToAccept length:", get().hitsToAccept.length);
       if (get().paused) return;
 
       let hitsToAccept = get().hitsToAccept;
@@ -505,12 +510,14 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       const { hit_set_id, accept_project_task_url } = hitToProcess;
 
       const currentHit = get().hits.data?.find((h) => h.hit_set_id === hit_set_id);
+      console.log("[handleAutomaticAcceptance] currentHit found:", !!currentHit, "scoop:", currentHit?.scoop);
       if (!currentHit?.scoop) {
         get().removeHitFromAccept(hit_set_id);
         return;
       }
 
       try {
+        console.log("[handleAutomaticAcceptance] Fetching:", accept_project_task_url);
         const response = await fetch(`${accept_project_task_url}&format=json`, {
           credentials: "include",
         });
@@ -522,12 +529,12 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           data = null;
         }
 
+        console.log("[handleAutomaticAcceptance] Response state:", data?.state);
         if (data?.state === "Assigned") {
+          console.log("[handleAutomaticAcceptance] HIT Assigned! soundEnabled:", get().config.soundEnabled, "soundType:", get().config.soundType);
           if (get().config.soundEnabled && currentHit) {
-            announceHitCaught(
-              currentHit.title,
-              currentHit.monetary_reward?.amount_in_dollars || 0
-            );
+            console.log("[handleAutomaticAcceptance] Calling announceHitCaught");
+            announceHitCaught(get().config.soundType as SoundType);
           }
           switch (currentHit?.scoop) {
             case "scoop":
@@ -562,6 +569,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
     acceptHit: (hit: IHitProject) => {
+      console.log("[acceptHit] Called for hit:", hit.hit_set_id);
       return new Promise<void>((resolve) => {
         debouncedAcceptHit(hit);
         resolve();

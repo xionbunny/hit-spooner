@@ -7,10 +7,9 @@ import {
   TextInput,
   Group,
   Paper,
-  Slider,
   Button,
 } from "@mantine/core";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { useStore } from "../../hooks";
 import {
   StyledModal,
@@ -24,11 +23,8 @@ import {
   hitFilterPageSizeOptions,
   hitFilterSortOptions,
 } from "@hit-spooner/api";
-import { getAvailableVoices, testSpeech } from "../../utils";
+import { playSound, soundOptions, SoundType } from "../../utils";
 
-/**
- * Interface for the SettingsModal component props.
- */
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -41,47 +37,9 @@ const updateIntervalOptions = [
   { value: "2000", label: "Slow (2000ms)" },
 ];
 
-/**
- * Modal component that provides a UI for configuring HitSpooner.
- *
- * @param {SettingsModalProps} props - Component properties.
- * @param {boolean} props.isOpen - Determines if the modal is open.
- * @param {() => void} props.onClose - Callback function to close the modal.
- */
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const theme = useTheme();
   const { filters, setFilters, config } = useStore();
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-
-  useEffect(() => {
-    const loadVoices = () => {
-      const availableVoices = getAvailableVoices();
-      setVoices(availableVoices);
-    };
-
-    loadVoices();
-    
-    if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-
-    return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (config.speechVoiceURI) {
-      const { setSpeechVoice } = require("../../utils");
-      setSpeechVoice(config.speechVoiceURI);
-    }
-    if (config.speechRate) {
-      const { setSpeechRate } = require("../../utils");
-      setSpeechRate(config.speechRate);
-    }
-  }, [config.speechVoiceURI, config.speechRate]);
 
   const handleThemeChange = (key: ThemeKey | null) => {
     if (key) {
@@ -113,6 +71,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const handleSoundTypeChange = (value: string | null) => {
+    if (value) {
+      config.setSoundType(value);
+    }
+  };
+
+  const handleTestSound = () => {
+    playSound(config.soundType as SoundType);
+  };
+
   return (
     <StyledModal
       opened={isOpen}
@@ -127,7 +95,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       closeOnClickOutside
     >
       <Stack gap="md">
-        {/* Theme Selection */}
         <FormSection title="General Settings">
           <Select
             label="Theme"
@@ -139,8 +106,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           />
         </FormSection>
 
-        {/* Sound Settings */}
-        <FormSection title="Sound & Announcements">
+        <FormSection title="Sound Settings">
           <Group
             align="apart"
             style={{
@@ -148,7 +114,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             }}
           >
             <CustomIconCheckbox
-              label="Enable Announcements"
+              label="Enable Sound"
               name="soundEnabled"
               checked={config.soundEnabled}
               onChange={() => config.setSoundEnabled(!config.soundEnabled)}
@@ -158,43 +124,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           {config.soundEnabled && (
             <>
               <Select
-                label="Voice"
-                data={voices.map(v => ({ value: v.voiceURI, label: `${v.name} (${v.lang})` }))}
-                placeholder="Select voice"
-                onChange={(value) => config.setSpeechVoiceURI(value)}
-                value={config.speechVoiceURI}
+                label="Sound Type"
+                data={soundOptions}
+                placeholder="Select sound"
+                onChange={handleSoundTypeChange}
+                value={config.soundType}
                 styles={themedInputStyles(theme)}
                 mt="sm"
               />
-              
-              <Box mt="md">
-                <Text size="sm" mb="xs" style={{ color: theme.colors.primary[7] }}>
-                  Speech Rate: {config.speechRate.toFixed(1)}x
-                </Text>
-                <Slider
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  value={config.speechRate}
-                  onChange={(value) => config.setSpeechRate(value)}
-                  label={null}
-                />
-              </Box>
               
               <Button
                 variant="light"
                 size="sm"
                 mt="md"
-                onClick={() => testSpeech()}
+                onClick={handleTestSound}
                 style={{ width: "100%" }}
               >
-                Test Voice
+                Test Sound
               </Button>
             </>
           )}
         </FormSection>
 
-        {/* Update Interval Selection */}
         <FormSection title="Update Interval">
           <Select
             label="Update Interval"
@@ -206,7 +157,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           />
         </FormSection>
 
-        {/* Search Filters */}
         <FormSection title="Search Settings">
           <TextInput
             label="Minimum Reward"
@@ -263,9 +213,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   );
 };
 
-/**
- * FormSection component to group related form controls together with a title.
- */
 const FormSection: React.FC<{ title: string; children: React.ReactNode }> = ({
   title,
   children,

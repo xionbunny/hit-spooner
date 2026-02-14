@@ -77,9 +77,9 @@ const HitQueue: React.FC = () => {
   };
 
   if (queue.length === 0) {
-    return (
-      <>
-        <PanelTitleBar title="Your HITs Queue" />
+  return (
+    <>
+      <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
         <CenteredText>You don't currently have any HITs accepted.</CenteredText>
       </>
     );
@@ -87,7 +87,7 @@ const HitQueue: React.FC = () => {
 
   return (
     <>
-      <PanelTitleBar title="Your HITs Queue" />
+      <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
 
       <StyledTable highlightOnHover verticalSpacing="sm" striped>
         <thead>
