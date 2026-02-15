@@ -5,6 +5,7 @@ import { IHitProjectWithHourlyRate } from "@hit-spooner/api";
 import { Tooltip } from "@mantine/core";
 import {
   IconAlertCircle,
+  IconEye,
   IconStarFilled,
   IconUser,
   IconX,
@@ -284,6 +285,11 @@ export const HitItem: React.FC<HitItemProps> = ({
         </TopSection>
         <BottomSection>
           <div style={{ display: "flex", gap: theme.spacing.sm }}>
+            <Tooltip label="Preview HIT" position="bottom" style={tooltipStyle}>
+              <IconButton active onClick={() => window.open(`https://www.mturk.com/mturk/preview?groupId=${hit.hit_set_id}`, "_blank")}>
+                <IconEye size={22} />
+              </IconButton>
+            </Tooltip>
             <Tooltip label="Scoop HIT" position="bottom" style={tooltipStyle}>
               <IconButton active={hit.scoop === "scoop"} scoopType="scoop" onClick={() => handleScoopToggle("scoop")} style={{ transform: "scaleX(-1)" }}>
                 <GiSpoon size={24} />

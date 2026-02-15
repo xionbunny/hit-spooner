@@ -31,10 +31,10 @@ interface SettingsModalProps {
 }
 
 const updateIntervalOptions = [
-  { value: "900", label: "Lightning Fast (900ms)" },
-  { value: "1200", label: "Fast (1200ms)" },
-  { value: "1500", label: "Balanced (1500ms)" },
-  { value: "2000", label: "Slow (2000ms)" },
+  { value: "1000", label: "Fast (1s)" },
+  { value: "1500", label: "Balanced (1.5s)" },
+  { value: "2000", label: "Safe (2s)" },
+  { value: "3000", label: "Conservative (3s)" },
 ];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {

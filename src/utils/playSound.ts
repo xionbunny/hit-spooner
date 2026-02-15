@@ -194,6 +194,7 @@ const createAudioPlayer = (type: SoundType): HTMLAudioElement => {
 };
 
 export const playSound = (soundType: SoundType): void => {
+  console.log("[HitSpooner] playSound called:", soundType);
   unlockAudio();
   createAudioPlayer(soundType).play().catch(e => {
     if (!isAutoplayBlocked(e)) console.error('[playSound] Play failed:', e);

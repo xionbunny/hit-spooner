@@ -21,8 +21,12 @@ const QUEUE_REFRESH_INTERVAL = 2000;
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_CONSECUTIVE_ERRORS = 5;
 const ERROR_BACKOFF_MULTIPLIER = 1.5;
+const MIN_FETCH_INTERVAL_MS = 500;
 
-let globalLastFetchTime = 0;
+let lastFetchCompleteTime = 0;
+let isFetchInProgress = false;
+let isQueueFetchInProgress = false;
+let isDashboardFetchInProgress = false;
 
 const defaultHitFilters: IHitSearchFilter = {
   qualified: true,
@@ -103,26 +107,43 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
   const debouncedAcceptHit = debounce(async (hit: IHitProject) => {
     if (get().paused) return;
 
+    const acceptUrl = `https://worker.mturk.com/projects/${hit.hit_set_id}/tasks/accept_random`;
+
     try {
-      const response = await fetch(
-        `${hit.accept_project_task_url}&format=json`,
-        { credentials: "include" }
-      );
+      const response = await fetch(acceptUrl, { credentials: "include" });
 
-      if (!response.ok) return;
+      if (response.status === 429) {
+        return;
+      }
 
-      const data = await response.json();
-
-      if (data?.state === "Assigned") {
-        if (get().config.soundEnabled) {
-          announceHitCaught(get().config.soundType as SoundType);
+      if (response.ok) {
+        const contentType = response.headers.get('Content-Type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data?.state === "Assigned") {
+            if (get().config.soundEnabled) {
+              announceHitCaught(get().config.soundType as SoundType);
+            }
+            hit.unavailable = true;
+            await addOrUpdateHit(hit);
+            get().removeHitFromAccept(hit.hit_set_id);
+          }
+        } else {
+          if (get().config.soundEnabled) {
+            announceHitCaught(get().config.soundType as SoundType);
+          }
+          hit.unavailable = true;
+          await addOrUpdateHit(hit);
+          get().removeHitFromAccept(hit.hit_set_id);
         }
-        hit.unavailable = true;
-        await addOrUpdateHit(hit);
-        get().removeHitFromAccept(hit.hit_set_id);
       }
     } catch (error) {
-      console.error("[debouncedAcceptHit] Error:", error);
+      if (get().config.soundEnabled) {
+        announceHitCaught(get().config.soundType as SoundType);
+      }
+      hit.unavailable = true;
+      await addOrUpdateHit(hit);
+      get().removeHitFromAccept(hit.hit_set_id);
     }
   }, MTURK_FETCH_DEBOUNCE_TIME);
 
@@ -229,7 +250,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       updateInterval: safeParseInt(
         localStorage.getItem(LocalStorageKeys.UpdateInterval),
-        1200
+        1500
       ),
       setUpdateInterval: (interval: number) => {
         localStorage.setItem(LocalStorageKeys.UpdateInterval, interval.toString());
@@ -317,18 +338,22 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       });
     },
 
-    fetchAndUpdateHits: debounce(async (page = 1) => {
+    fetchAndUpdateHits: async (page = 1) => {
       if (get().paused) return;
       
-      const timeSinceLastFetch = Date.now() - globalLastFetchTime;
-      const minInterval = get().config.updateInterval * currentBackoff;
-      
-      if (timeSinceLastFetch < minInterval * 0.8) {
-        console.log("[HitSpooner] Skipping fetch - too soon since last fetch");
+      if (isFetchInProgress) {
         return;
       }
       
-      globalLastFetchTime = Date.now();
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchCompleteTime;
+      const minInterval = Math.max(get().config.updateInterval * currentBackoff, MIN_FETCH_INTERVAL_MS);
+      
+      if (timeSinceLastFetch < minInterval) {
+        return;
+      }
+      
+      isFetchInProgress = true;
 
       const filters = get().filters;
       const pageSize = filters.pageSize ? parseInt(filters.pageSize) : 50;
@@ -391,8 +416,11 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
             error: "Failed to fetch HITs",
           },
         });
+      } finally {
+        lastFetchCompleteTime = Date.now();
+        isFetchInProgress = false;
       }
-    }, MTURK_FETCH_DEBOUNCE_TIME),
+    },
 
     setHitsPage: async (page: number) => {
       const state = get();
@@ -422,8 +450,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       }
     },
 
-    fetchAndUpdateHitsQueue: debounce(async () => {
-      const previousQueueLength = get().queue.length;
+    fetchAndUpdateHitsQueue: async () => {
+      if (isQueueFetchInProgress) return;
+      isQueueFetchInProgress = true;
+      
       set({ loadingQueue: true });
 
       try {
@@ -438,19 +468,20 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         const data = await response.json();
         const newQueue = data.tasks || [];
 
-        if (newQueue.length > previousQueueLength && get().config.soundEnabled) {
-          announceHitCaught(get().config.soundType as SoundType);
-        }
-
         handleSuccess();
         set({ queue: newQueue, loadingQueue: false });
       } catch (error) {
         handleError("fetchAndUpdateHitsQueue");
         set({ loadingQueue: false });
+      } finally {
+        isQueueFetchInProgress = false;
       }
-    }, MTURK_FETCH_DEBOUNCE_TIME),
+    },
 
-    fetchAndUpdateDashboard: debounce(async () => {
+    fetchAndUpdateDashboard: async () => {
+      if (isDashboardFetchInProgress) return;
+      isDashboardFetchInProgress = true;
+      
       set((state) => ({
         dashboard: { ...state.dashboard, loading: true },
       }));
@@ -470,8 +501,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
             error: "Failed to fetch dashboard data",
           },
         }));
+      } finally {
+        isDashboardFetchInProgress = false;
       }
-    }, MTURK_FETCH_DEBOUNCE_TIME),
+    },
 
     addOrUpdateHit: debounce(async (hit: IHitProject) => {
       if (get().paused) return;
@@ -520,7 +553,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       if (hitsToAccept.length === 0) return;
 
       const hitToProcess = hitsToAccept[0];
-      const { hit_set_id, accept_project_task_url } = hitToProcess;
+      const { hit_set_id } = hitToProcess;
 
       const currentHit = state.hits.data?.find((h) => h.hit_set_id === hit_set_id);
       if (!currentHit?.scoop) {
@@ -533,35 +566,78 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         set({ hitsToAccept: rotated });
       };
 
+      const acceptUrl = `https://worker.mturk.com/projects/${hit_set_id}/tasks/accept_random`;
+      const failureCodes = new Set([403, 404, 429, 500]);
+
       try {
-        const response = await fetch(`${accept_project_task_url}&format=json`, {
+        const response = await fetch(acceptUrl, {
           credentials: "include",
         });
 
-        const data = await response.json().catch(() => null);
+        if (failureCodes.has(response.status)) {
+          rotateQueue();
+          return;
+        }
 
-        if (data?.state === "Assigned") {
-          if (state.config.soundEnabled && currentHit) {
-            announceHitCaught(state.config.soundType as SoundType);
-          }
-          
-          if (currentHit.scoop === "scoop") {
-            get().removeHitFromAccept(hit_set_id);
-            currentHit.scoop = undefined;
-            currentHit.unavailable = true;
-            await addOrUpdateHit(currentHit);
-          } else if (currentHit.scoop === "shovel") {
-            currentHit.unavailable = true;
-            await addOrUpdateHit(currentHit);
-            rotateQueue();
+        if (response.ok) {
+          const contentType = response.headers.get('Content-Type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json().catch(() => null);
+            if (data?.state === "Assigned") {
+              if (state.config.soundEnabled && currentHit) {
+                announceHitCaught(state.config.soundType as SoundType);
+              }
+              if (currentHit.scoop === "scoop") {
+                get().removeHitFromAccept(hit_set_id);
+                currentHit.scoop = undefined;
+                currentHit.unavailable = true;
+                await addOrUpdateHit(currentHit);
+              } else if (currentHit.scoop === "shovel") {
+                currentHit.unavailable = true;
+                await addOrUpdateHit(currentHit);
+                rotateQueue();
+              } else {
+                get().removeHitFromAccept(hit_set_id);
+              }
+            } else {
+              rotateQueue();
+            }
           } else {
-            get().removeHitFromAccept(hit_set_id);
+            if (state.config.soundEnabled && currentHit) {
+              announceHitCaught(state.config.soundType as SoundType);
+            }
+            if (currentHit.scoop === "scoop") {
+              get().removeHitFromAccept(hit_set_id);
+              currentHit.scoop = undefined;
+              currentHit.unavailable = true;
+              await addOrUpdateHit(currentHit);
+            } else if (currentHit.scoop === "shovel") {
+              currentHit.unavailable = true;
+              await addOrUpdateHit(currentHit);
+              rotateQueue();
+            } else {
+              get().removeHitFromAccept(hit_set_id);
+            }
           }
         } else {
           rotateQueue();
         }
       } catch (error) {
-        rotateQueue();
+        if (state.config.soundEnabled && currentHit) {
+          announceHitCaught(state.config.soundType as SoundType);
+        }
+        if (currentHit.scoop === "scoop") {
+          get().removeHitFromAccept(hit_set_id);
+          currentHit.scoop = undefined;
+          currentHit.unavailable = true;
+          await addOrUpdateHit(currentHit);
+        } else if (currentHit.scoop === "shovel") {
+          currentHit.unavailable = true;
+          await addOrUpdateHit(currentHit);
+          rotateQueue();
+        } else {
+          get().removeHitFromAccept(hit_set_id);
+        }
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
@@ -609,25 +685,24 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       clearIntervals();
 
       const interval = get().config.updateInterval;
-      const effectiveInterval = Math.max(interval, 1000);
 
       hitsIntervalRef = setInterval(() => {
         const currentState = get();
         if (!currentState.paused) {
           currentState.fetchAndUpdateHits();
         }
-      }, effectiveInterval);
+      }, interval);
 
       autoAcceptIntervalRef = setInterval(() => {
         const currentState = get();
         if (!currentState.paused) {
           currentState.handleAutomaticAcceptance();
         }
-      }, effectiveInterval);
+      }, interval);
 
       dashboardIntervalRef = setInterval(() => {
         get().fetchAndUpdateDashboard();
-      }, effectiveInterval * 6);
+      }, interval * 6);
 
       queueIntervalRef = setInterval(() => {
         get().fetchAndUpdateHitsQueue();
