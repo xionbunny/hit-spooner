@@ -1,24 +1,8 @@
 import { IHitProject, IHitSearchFilter } from "@hit-spooner/api";
+import { fetchWithTimeout } from "./fetchWithTimeout";
 
 const FETCH_TIMEOUT_MS = 15000;
 const PAGE_DELAY_MS = 50;
-
-const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    const response = await fetch(url, {
-      credentials: "include",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-};
 
 export const fetchHITProjects = async (
   filters: IHitSearchFilter
@@ -46,7 +30,7 @@ export const fetchHITProjects = async (
       const baseUrl = "https://worker.mturk.com/?";
       const url = `${baseUrl}${params.toString()}`;
 
-      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
+      const response = await fetchWithTimeout(url, { credentials: "include" }, FETCH_TIMEOUT_MS);
 
       if (!response.ok) {
         if (response.status === 429) {

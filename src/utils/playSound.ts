@@ -161,15 +161,23 @@ const getSilentSound = (): string => {
 };
 
 let audioUnlocked = false;
+let audioUnlockSucceeded = false;
 
 const unlockAudio = (): void => {
-  if (audioUnlocked) return;
+  console.log('[HitSpooner] unlockAudio called, audioUnlocked:', audioUnlocked, 'succeeded:', audioUnlockSucceeded);
+  if (audioUnlockSucceeded) return;
   
   const audio = new Audio(`data:audio/wav;base64,${getSilentSound()}`);
   audio.volume = 0.01;
   audio.play()
-    .then(() => { audioUnlocked = true; })
-    .catch(() => {});
+    .then(() => { 
+      console.log('[HitSpooner] Audio unlocked successfully');
+      audioUnlocked = true;
+      audioUnlockSucceeded = true;
+    })
+    .catch((e) => { 
+      console.log('[HitSpooner] Audio unlock will retry on next interaction');
+    });
 };
 
 const isAutoplayBlocked = (e: unknown): boolean => {
@@ -187,18 +195,46 @@ const isAutoplayBlocked = (e: unknown): boolean => {
 
 const DEFAULT_VOLUME = 0.6;
 
+let lastAudio: HTMLAudioElement | null = null;
+
 const createAudioPlayer = (type: SoundType): HTMLAudioElement => {
   const audio = new Audio(`data:audio/wav;base64,${getSoundBase64(type)}`);
   audio.volume = DEFAULT_VOLUME;
+  lastAudio = audio;
   return audio;
 };
 
 export const playSound = (soundType: SoundType): void => {
-  console.log("[HitSpooner] playSound called:", soundType);
-  unlockAudio();
-  createAudioPlayer(soundType).play().catch(e => {
-    if (!isAutoplayBlocked(e)) console.error('[playSound] Play failed:', e);
-  });
+  console.log('[HitSpooner] playSound called with:', soundType);
+  
+  // Try to unlock audio first if not already unlocked
+  if (!audioUnlockSucceeded) {
+    unlockAudio();
+  }
+  
+  // Create and play immediately - user interaction should allow this
+  const audio = new Audio();
+  audio.src = `data:audio/wav;base64,${getSoundBase64(soundType)}`;
+  audio.volume = DEFAULT_VOLUME;
+  
+  const playPromise = audio.play();
+  if (playPromise !== undefined) {
+    playPromise.then(() => {
+      console.log('[HitSpooner] Sound played successfully');
+    }).catch(e => {
+      console.log('[HitSpooner] Audio play failed:', e);
+      // Fallback to speech synthesis which doesn't require user interaction
+      try {
+        const utterance = new SpeechSynthesisUtterance('HIT caught');
+        utterance.rate = 2;
+        utterance.pitch = 1.5;
+        window.speechSynthesis.speak(utterance);
+        console.log('[HitSpooner] Speech synthesis played');
+      } catch (e2) {
+        console.log('[HitSpooner] Speech synthesis also failed:', e2);
+      }
+    });
+  }
 };
 
 export const playChime = (): void => playSound('chime');

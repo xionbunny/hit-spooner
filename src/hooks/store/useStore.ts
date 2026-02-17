@@ -11,22 +11,13 @@ import {
   newsTheme,
   blueTheme,
 } from "../../styles/themes";
-import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType } from "../../utils";
+import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType, playSound } from "../../utils";
 import { useIndexedDb, loadHits as loadHitsFromDb } from "../useIndexedDb";
 import { IHitSpoonerStoreState } from "./IHitSpoonerStoreState";
 import { LocalStorageKeys } from "./LocalStorageKeys";
 
+const INDEXED_DB_BATCH_UPDATE_SIZE = 10;
 const MTURK_FETCH_DEBOUNCE_TIME = 80;
-const QUEUE_REFRESH_INTERVAL = 2000;
-const FETCH_TIMEOUT_MS = 15000;
-const MAX_CONSECUTIVE_ERRORS = 5;
-const ERROR_BACKOFF_MULTIPLIER = 1.5;
-const MIN_FETCH_INTERVAL_MS = 500;
-
-let lastFetchCompleteTime = 0;
-let isFetchInProgress = false;
-let isQueueFetchInProgress = false;
-let isDashboardFetchInProgress = false;
 
 const defaultHitFilters: IHitSearchFilter = {
   qualified: true,
@@ -37,113 +28,49 @@ const defaultHitFilters: IHitSearchFilter = {
   currentPage: 1,
 };
 
-const themes = {
-  light: lightTheme,
-  dark: darkTheme,
-  blue: blueTheme,
-  pink: pinkTheme,
-  green: greenTheme,
-  purple: purpleTheme,
-  steel: steelTheme,
-  news: newsTheme,
-};
-
-const safeParseInt = (value: string | null, defaultValue: number): number => {
-  const parsed = parseInt(value || "");
-  return isNaN(parsed) ? defaultValue : parsed;
-};
-
 export const useStore = create<IHitSpoonerStoreState>((set, get) => {
   const { addOrUpdateHit, addOrUpdateHits, loadHitsByPage, deleteHitFromIndexedDb } =
     useIndexedDb();
-  let hitsIntervalRef: ReturnType<typeof setInterval> | null = null;
-  let autoAcceptIntervalRef: ReturnType<typeof setInterval> | null = null;
-  let dashboardIntervalRef: ReturnType<typeof setInterval> | null = null;
-  let queueIntervalRef: ReturnType<typeof setInterval> | null = null;
-  let consecutiveErrors = 0;
-  let currentBackoff = 1;
+  let intervalRef: NodeJS.Timeout | null = null;
+
+  const safeParseInt = (value: string | null, defaultValue: number): number => {
+    const parsed = parseInt(value || "");
+    return isNaN(parsed) ? defaultValue : parsed;
+  };
 
   const clearIntervals = () => {
-    if (hitsIntervalRef) clearInterval(hitsIntervalRef);
-    if (autoAcceptIntervalRef) clearInterval(autoAcceptIntervalRef);
-    if (dashboardIntervalRef) clearInterval(dashboardIntervalRef);
-    if (queueIntervalRef) clearInterval(queueIntervalRef);
-  };
-
-  const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number): Promise<Response> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
-  };
-
-  const handleError = (context: string) => {
-    consecutiveErrors++;
-    console.error(`[HitSpooner] ${context} - Error count: ${consecutiveErrors}`);
-    
-    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-      currentBackoff = Math.min(currentBackoff * ERROR_BACKOFF_MULTIPLIER, 5);
-      console.warn(`[HitSpooner] Increasing backoff to ${currentBackoff}x due to repeated errors`);
-    }
-  };
-
-  const handleSuccess = () => {
-    if (consecutiveErrors > 0) {
-      consecutiveErrors = 0;
-      currentBackoff = 1;
+    if (intervalRef) {
+      clearInterval(intervalRef);
     }
   };
 
   const debouncedAcceptHit = debounce(async (hit: IHitProject) => {
     if (get().paused) return;
 
-    const acceptUrl = `https://worker.mturk.com/projects/${hit.hit_set_id}/tasks/accept_random`;
-
     try {
-      const response = await fetch(acceptUrl, { credentials: "include" });
+      const response = await fetch(
+        `${hit.accept_project_task_url}&format=json`,
+        {
+          credentials: "include",
+        }
+      );
 
-      if (response.status === 429) {
+      if (!response.ok) {
+        if (response.status === 422) {
+          return;
+        }
         return;
       }
 
-      if (response.ok) {
-        const contentType = response.headers.get('Content-Type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data?.state === "Assigned") {
-            if (get().config.soundEnabled) {
-              announceHitCaught(get().config.soundType as SoundType);
-            }
-            hit.unavailable = true;
-            await addOrUpdateHit(hit);
-            get().removeHitFromAccept(hit.hit_set_id);
-          }
-        } else {
-          if (get().config.soundEnabled) {
-            announceHitCaught(get().config.soundType as SoundType);
-          }
-          hit.unavailable = true;
-          await addOrUpdateHit(hit);
-          get().removeHitFromAccept(hit.hit_set_id);
-        }
+      const data = await response.json();
+
+      if (data?.state === "Assigned") {
+        hit.unavailable = true;
+        await addOrUpdateHit(hit);
+        get().removeHitFromAccept(hit.hit_set_id);
       }
     } catch (error) {
-      if (get().config.soundEnabled) {
-        announceHitCaught(get().config.soundType as SoundType);
-      }
-      hit.unavailable = true;
-      await addOrUpdateHit(hit);
-      get().removeHitFromAccept(hit.hit_set_id);
+      // Handle network errors silently
     }
   }, MTURK_FETCH_DEBOUNCE_TIME);
 
@@ -177,39 +104,61 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
     config: {
       theme: localStorage.getItem(LocalStorageKeys.Theme) || "light",
-      themes,
+      themes: {
+        light: lightTheme,
+        dark: darkTheme,
+        blue: blueTheme,
+        pink: pinkTheme,
+        green: greenTheme,
+        purple: purpleTheme,
+        steel: steelTheme,
+        news: newsTheme,
+      },
       setTheme: (newTheme) => {
         localStorage.setItem(LocalStorageKeys.Theme, newTheme);
         chrome.storage.sync.set({ theme: newTheme });
+
         set((state) => ({
           config: { ...state.config, theme: newTheme },
         }));
       },
       workspacePanelSizes: JSON.parse(
-        localStorage.getItem(LocalStorageKeys.WorkspacePanelSizes) || "[0.3, 0.7]"
+        localStorage.getItem(LocalStorageKeys.WorkspacePanelSizes) ||
+          "[0.3, 0.7]"
       ),
       setWorkspacePanelSizes: debounce((sizes: number[]) => {
-        localStorage.setItem(LocalStorageKeys.WorkspacePanelSizes, JSON.stringify(sizes));
+        localStorage.setItem(
+          LocalStorageKeys.WorkspacePanelSizes,
+          JSON.stringify(sizes)
+        );
         set((state) => ({
           config: { ...state.config, workspacePanelSizes: sizes },
         }));
       }, 100),
 
       workspaceListSizes: JSON.parse(
-        localStorage.getItem(LocalStorageKeys.WorkspaceListSizes) || "[0.5, 0.5]"
+        localStorage.getItem(LocalStorageKeys.WorkspaceListSizes) ||
+          "[0.5, 0.5]"
       ),
       setWorkspaceListSizes: debounce((sizes: number[]) => {
-        localStorage.setItem(LocalStorageKeys.WorkspaceListSizes, JSON.stringify(sizes));
+        localStorage.setItem(
+          LocalStorageKeys.WorkspaceListSizes,
+          JSON.stringify(sizes)
+        );
         set((state) => ({
           config: { ...state.config, workspaceListSizes: sizes },
         }));
       }, 100),
 
       hitTaskViewPanelSizes: JSON.parse(
-        localStorage.getItem(LocalStorageKeys.TaskViewPanelSizes) || "[0.8, 0.2]"
+        localStorage.getItem(LocalStorageKeys.TaskViewPanelSizes) ||
+          "[0.8, 0.2]"
       ),
-      setHitTaskViewPanelSizes: debounce((sizes: number[]) => {
-        localStorage.setItem(LocalStorageKeys.TaskViewPanelSizes, JSON.stringify(sizes));
+      setHitTaskViewPanelSizes: debounce((sizes) => {
+        localStorage.setItem(
+          LocalStorageKeys.TaskViewPanelSizes,
+          JSON.stringify(sizes)
+        );
         set((state) => ({
           config: { ...state.config, hitTaskViewPanelSizes: sizes },
         }));
@@ -220,7 +169,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         3
       ),
       setWorkspaceAvailableColumns: (columns: number) => {
-        localStorage.setItem(LocalStorageKeys.WorkspaceAvailableColumns, columns.toString());
+        localStorage.setItem(
+          LocalStorageKeys.WorkspaceAvailableColumns,
+          columns.toString()
+        );
         set((state) => ({
           config: { ...state.config, workspaceAvailableColumns: columns },
         }));
@@ -231,7 +183,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         3
       ),
       setWorkspaceUnavailableColumns: (columns: number) => {
-        localStorage.setItem(LocalStorageKeys.WorkspaceUnavailableColumns, columns.toString());
+        localStorage.setItem(
+          LocalStorageKeys.WorkspaceUnavailableColumns,
+          columns.toString()
+        );
         set((state) => ({
           config: { ...state.config, workspaceUnavailableColumns: columns },
         }));
@@ -242,7 +197,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         3
       ),
       setRequesterModalColumns: (columns: number) => {
-        localStorage.setItem(LocalStorageKeys.RequesterModalColumns, columns.toString());
+        localStorage.setItem(
+          LocalStorageKeys.RequesterModalColumns,
+          columns.toString()
+        );
         set((state) => ({
           config: { ...state.config, requesterModalColumns: columns },
         }));
@@ -250,10 +208,13 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       updateInterval: safeParseInt(
         localStorage.getItem(LocalStorageKeys.UpdateInterval),
-        1500
+        1200
       ),
       setUpdateInterval: (interval: number) => {
-        localStorage.setItem(LocalStorageKeys.UpdateInterval, interval.toString());
+        localStorage.setItem(
+          LocalStorageKeys.UpdateInterval,
+          interval.toString()
+        );
         set((state) => ({
           config: { ...state.config, updateInterval: interval },
         }));
@@ -261,7 +222,8 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         get().startUpdateIntervals();
       },
 
-      soundEnabled: localStorage.getItem(LocalStorageKeys.SoundEnabled) !== "false",
+      soundEnabled:
+        localStorage.getItem(LocalStorageKeys.SoundEnabled) !== "false",
       setSoundEnabled: (enabled: boolean) => {
         localStorage.setItem(LocalStorageKeys.SoundEnabled, String(enabled));
         set((state) => ({
@@ -328,99 +290,78 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     },
 
     togglePause: () => {
-      set((state) => {
-        const newPaused = !state.paused;
-        if (!newPaused) {
-          consecutiveErrors = 0;
-          currentBackoff = 1;
-        }
-        return { paused: newPaused };
-      });
+      set((state) => ({
+        paused: !state.paused,
+      }));
     },
 
-    fetchAndUpdateHits: async (page = 1) => {
+    fetchAndUpdateHits: debounce(async (page = 1) => {
       if (get().paused) return;
-      
-      if (isFetchInProgress) {
-        return;
-      }
-      
-      const now = Date.now();
-      const timeSinceLastFetch = now - lastFetchCompleteTime;
-      const minInterval = Math.max(get().config.updateInterval * currentBackoff, MIN_FETCH_INTERVAL_MS);
-      
-      if (timeSinceLastFetch < minInterval) {
-        return;
-      }
-      
-      isFetchInProgress = true;
-
-      const filters = get().filters;
-      const pageSize = filters.pageSize ? parseInt(filters.pageSize) : 50;
 
       set((state) => ({
         hits: { ...state.hits, loading: true },
       }));
 
       try {
-        const fetchedHits = await fetchHITProjects(filters);
-        handleSuccess();
-        
-        const fetchedHitIds = new Set(fetchedHits.map((h) => h.hit_set_id));
-        
-        const allCachedHits = await loadHitsFromDb(filters);
-        
-        for (const cachedHit of allCachedHits) {
-          if (!fetchedHitIds.has(cachedHit.hit_set_id) && !cachedHit.unavailable) {
-            cachedHit.unavailable = true;
-            await addOrUpdateHit(cachedHit);
-          }
-        }
-        
-        if (fetchedHits.length > 0) {
-          await addOrUpdateHits(fetchedHits);
-        }
-
-        const [newHits, totalHits] = await loadHitsByPage(
-          page,
-          pageSize,
-          filters
-        );
-        
+        const fetchedHits = await fetchHITProjects(get().filters);
         const blockedRequesters = get().blockedRequesters;
-
-        const filteredNewHits = newHits.filter(
+        const filteredHits = fetchedHits.filter(
           (hit: IHitProject) => !blockedRequesters.includes(hit.requester_id)
         );
+        
+        const allCachedHits = await loadHitsFromDb(get().filters);
+        const hitMap = new Map();
+        allCachedHits.forEach((hit: IHitProject) => {
+          hitMap.set(hit.hit_set_id, hit);
+        });
 
-        const existingHits = get().hits.data || [];
-        const updatedHits =
-          page === 1 ? filteredNewHits : [...existingHits, ...filteredNewHits];
+        filteredHits.forEach((hit: IHitProject) => {
+          const cachedHit = hitMap.get(hit.hit_set_id);
+          hit.unavailable = false;
+          if (cachedHit && (cachedHit.scoop === "scoop" || cachedHit.scoop === "shovel")) {
+            hit.scoop = cachedHit.scoop;
+          }
+          if (hit.scoop && !hit.unavailable) {
+            if (!get().hitsToAccept.some((h: IHitProject) => h.hit_set_id === hit.hit_set_id)) {
+              get().addHitToAccept(hit);
+            }
+          }
+          hitMap.set(hit.hit_set_id, hit);
+        });
+
+        allCachedHits.forEach((cachedHit: IHitProject) => {
+          if (!filteredHits.some((hit: IHitProject) => hit.hit_set_id === cachedHit.hit_set_id)) {
+            cachedHit.unavailable = true;
+            hitMap.set(cachedHit.hit_set_id, cachedHit);
+          }
+        });
+
+        const allHits = Array.from(hitMap.values());
+        
+        if (allHits.length > 0) {
+          for (let i = 0; i < allHits.length; i += 10) {
+            const batch = allHits.slice(i, i + 10);
+            await Promise.all(batch.map((hit: IHitProject) => addOrUpdateHit(hit)));
+          }
+        }
 
         set({
           hits: {
-            data: updatedHits,
+            data: allHits,
             loading: false,
             error: null,
-            pageSize: filters.pageSize ? parseInt(filters.pageSize) : 50,
-            currentPage: page,
-            total: totalHits,
           },
         });
       } catch (error) {
-        handleError("fetchAndUpdateHits");
         set({
           hits: {
-            data: get().hits.data,
+            data: null,
             loading: false,
             error: "Failed to fetch HITs",
           },
         });
-      } finally {
-        lastFetchCompleteTime = Date.now();
-        isFetchInProgress = false;
       }
-    },
+    }, MTURK_FETCH_DEBOUNCE_TIME),
 
     setHitsPage: async (page: number) => {
       const state = get();
@@ -450,61 +391,57 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       }
     },
 
-    fetchAndUpdateHitsQueue: async () => {
-      if (isQueueFetchInProgress) return;
-      isQueueFetchInProgress = true;
-      
+    fetchAndUpdateHitsQueue: debounce(async () => {
       set({ loadingQueue: true });
 
       try {
-        const response = await fetchWithTimeout(
+        const response = await fetch(
           "https://worker.mturk.com/tasks/?format=json",
-          { credentials: "include" },
-          FETCH_TIMEOUT_MS
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
         );
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch queue data.");
+        }
 
         const data = await response.json();
-        const newQueue = data.tasks || [];
 
-        handleSuccess();
-        set({ queue: newQueue, loadingQueue: false });
+        set({
+          queue: data.tasks || [],
+          loadingQueue: false,
+        });
       } catch (error) {
-        handleError("fetchAndUpdateHitsQueue");
+        console.error("Error fetching queue data:", error);
         set({ loadingQueue: false });
-      } finally {
-        isQueueFetchInProgress = false;
       }
-    },
+    }, MTURK_FETCH_DEBOUNCE_TIME),
 
-    fetchAndUpdateDashboard: async () => {
-      if (isDashboardFetchInProgress) return;
-      isDashboardFetchInProgress = true;
-      
+    fetchAndUpdateDashboard: debounce(async () => {
       set((state) => ({
         dashboard: { ...state.dashboard, loading: true },
       }));
 
       try {
         const dashboardData = await fetchDashboardData();
-        handleSuccess();
         set({
           dashboard: { data: dashboardData, loading: false, error: null },
         });
       } catch (error) {
-        handleError("fetchAndUpdateDashboard");
-        set((state) => ({
+        set({
           dashboard: {
-            data: state.dashboard.data,
+            data: null,
             loading: false,
             error: "Failed to fetch dashboard data",
           },
-        }));
-      } finally {
-        isDashboardFetchInProgress = false;
+        });
       }
-    },
+    }, MTURK_FETCH_DEBOUNCE_TIME),
 
     addOrUpdateHit: debounce(async (hit: IHitProject) => {
       if (get().paused) return;
@@ -546,104 +483,96 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
     handleAutomaticAcceptance: debounce(async () => {
-      const state = get();
-      if (state.paused) return;
+      if (get().paused) return;
 
-      const hitsToAccept = state.hitsToAccept;
-      if (hitsToAccept.length === 0) return;
+      let hitsToAccept = get().hitsToAccept;
+      if (hitsToAccept.length === 0) {
+        console.log('[HitSpooner] handleAutomaticAcceptance: no hits to accept');
+        return;
+      }
+
+      console.log('[HitSpooner] handleAutomaticAcceptance: processing', hitsToAccept.length, 'hits');
 
       const hitToProcess = hitsToAccept[0];
-      const { hit_set_id } = hitToProcess;
+      const { hit_set_id, accept_project_task_url } = hitToProcess;
 
-      const currentHit = state.hits.data?.find((h) => h.hit_set_id === hit_set_id);
+      const currentHit = get().hits.data?.find((h) => h.hit_set_id === hit_set_id);
       if (!currentHit?.scoop) {
+        console.log('[HitSpooner] handleAutomaticAcceptance: no scoop on hit');
         get().removeHitFromAccept(hit_set_id);
         return;
       }
 
-      const rotateQueue = () => {
-        const rotated = [...hitsToAccept.slice(1), hitToProcess];
-        set({ hitsToAccept: rotated });
-      };
-
-      const acceptUrl = `https://worker.mturk.com/projects/${hit_set_id}/tasks/accept_random`;
-      const failureCodes = new Set([403, 404, 429, 500]);
-
       try {
-        const response = await fetch(acceptUrl, {
+        console.log('[HitSpooner] handleAutomaticAcceptance: attempting accept for', hit_set_id);
+        const response = await fetch(`${accept_project_task_url}&format=json`, {
           credentials: "include",
         });
 
-        if (failureCodes.has(response.status)) {
-          rotateQueue();
-          return;
+        let data;
+        try {
+          data = await response.json();
+        } catch (error) {
+          data = null;
         }
 
-        if (response.ok) {
-          const contentType = response.headers.get('Content-Type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await response.json().catch(() => null);
-            if (data?.state === "Assigned") {
-              if (state.config.soundEnabled && currentHit) {
-                announceHitCaught(state.config.soundType as SoundType);
-              }
-              if (currentHit.scoop === "scoop") {
-                get().removeHitFromAccept(hit_set_id);
-                currentHit.scoop = undefined;
-                currentHit.unavailable = true;
-                await addOrUpdateHit(currentHit);
-              } else if (currentHit.scoop === "shovel") {
-                currentHit.unavailable = true;
-                await addOrUpdateHit(currentHit);
-                rotateQueue();
-              } else {
-                get().removeHitFromAccept(hit_set_id);
-              }
-            } else {
-              rotateQueue();
-            }
-          } else {
-            if (state.config.soundEnabled && currentHit) {
-              announceHitCaught(state.config.soundType as SoundType);
-            }
-            if (currentHit.scoop === "scoop") {
+        console.log('[HitSpooner] handleAutomaticAcceptance: response:', response.status, data);
+
+        const isSuccess = response.status === 200 && (data?.state === "Assigned" || data === null);
+        
+        if (isSuccess) {
+          console.log('[HitSpooner] Auto-accept success, playing sound');
+          playSound('chime');
+          if (get().config.soundEnabled && currentHit) {
+            announceHitCaught(get().config.soundType as SoundType);
+          }
+          switch (currentHit?.scoop) {
+            case "scoop":
               get().removeHitFromAccept(hit_set_id);
               currentHit.scoop = undefined;
               currentHit.unavailable = true;
               await addOrUpdateHit(currentHit);
-            } else if (currentHit.scoop === "shovel") {
+              break;
+
+            case "shovel":
               currentHit.unavailable = true;
               await addOrUpdateHit(currentHit);
-              rotateQueue();
-            } else {
+              hitsToAccept = hitsToAccept.slice(1);
+              hitsToAccept.push(hitToProcess);
+              set({ hitsToAccept });
+              break;
+
+            default:
               get().removeHitFromAccept(hit_set_id);
-            }
+              break;
+          }
+        } else if (response.status === 422 && data?.message?.includes("no more")) {
+          console.log('[HitSpooner] No more HITs available, removing from queue');
+          get().removeHitFromAccept(hit_set_id);
+          if (currentHit) {
+            currentHit.unavailable = true;
+            await addOrUpdateHit(currentHit);
           }
         } else {
-          rotateQueue();
+          hitsToAccept = hitsToAccept.slice(1);
+          hitsToAccept.push(hitToProcess);
+          set({ hitsToAccept });
         }
       } catch (error) {
-        if (state.config.soundEnabled && currentHit) {
-          announceHitCaught(state.config.soundType as SoundType);
-        }
-        if (currentHit.scoop === "scoop") {
-          get().removeHitFromAccept(hit_set_id);
-          currentHit.scoop = undefined;
-          currentHit.unavailable = true;
-          await addOrUpdateHit(currentHit);
-        } else if (currentHit.scoop === "shovel") {
-          currentHit.unavailable = true;
-          await addOrUpdateHit(currentHit);
-          rotateQueue();
-        } else {
-          get().removeHitFromAccept(hit_set_id);
-        }
+        hitsToAccept = hitsToAccept.slice(1);
+        hitsToAccept.push(hitToProcess);
+        set({ hitsToAccept });
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
     acceptHit: (hit: IHitProject) => {
-      debouncedAcceptHit(hit);
-      return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        playSound('chime');
+        setTimeout(() => {
+          debouncedAcceptHit(hit);
+          resolve();
+        }, 100);
+      });
     },
 
     deleteHit: async (hitId: string) => {
@@ -684,29 +613,56 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     startUpdateIntervals: () => {
       clearIntervals();
 
+      const fetchAndUpdateHits = get().fetchAndUpdateHits;
+      const fetchAndUpdateDashboard = get().fetchAndUpdateDashboard;
+      const handleAutomaticAcceptance = get().handleAutomaticAcceptance;
+      const fetchAndUpdateHitsQueue = get().fetchAndUpdateHitsQueue;
+
+      const taskWeights = {
+        fetchAndUpdateHitsQueue: 1,
+        fetchAndUpdateHits: 3,
+        handleAutomaticAcceptance: 2,
+        fetchAndUpdateDashboard: 1,
+      };
+
+      const taskQueue: (() => void)[] = [];
+
+      const addToQueue = () => {
+        for (let i = 0; i < taskWeights.fetchAndUpdateHitsQueue; i++) {
+          taskQueue.push(fetchAndUpdateHitsQueue);
+        }
+        for (let i = 0; i < taskWeights.fetchAndUpdateHits; i++) {
+          taskQueue.push(() => {
+            if (!get().paused) {
+              fetchAndUpdateHits();
+            }
+          });
+        }
+        for (let i = 0; i < taskWeights.handleAutomaticAcceptance; i++) {
+          taskQueue.push(() => {
+            if (!get().paused) {
+              handleAutomaticAcceptance();
+            }
+          });
+        }
+        for (let i = 0; i < taskWeights.fetchAndUpdateDashboard; i++) {
+          taskQueue.push(fetchAndUpdateDashboard);
+        }
+      };
+
+      const processQueue = () => {
+        if (taskQueue.length === 0) return;
+        const task = taskQueue.shift();
+        if (task) {
+          task();
+        }
+      };
+
       const interval = get().config.updateInterval;
 
-      hitsIntervalRef = setInterval(() => {
-        const currentState = get();
-        if (!currentState.paused) {
-          currentState.fetchAndUpdateHits();
-        }
-      }, interval);
-
-      autoAcceptIntervalRef = setInterval(() => {
-        const currentState = get();
-        if (!currentState.paused) {
-          currentState.handleAutomaticAcceptance();
-        }
-      }, interval);
-
-      dashboardIntervalRef = setInterval(() => {
-        get().fetchAndUpdateDashboard();
-      }, interval * 6);
-
-      queueIntervalRef = setInterval(() => {
-        get().fetchAndUpdateHitsQueue();
-      }, QUEUE_REFRESH_INTERVAL);
+      addToQueue();
+      intervalRef = setInterval(processQueue, interval);
+      setInterval(addToQueue, interval * taskQueue.length);
     },
   };
 });

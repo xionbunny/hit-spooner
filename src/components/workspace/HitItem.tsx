@@ -15,6 +15,7 @@ import { GiSpoon } from "react-icons/gi";
 import { MdOutlineQueuePlayNext } from "react-icons/md";
 import { TbShovel } from "react-icons/tb";
 import { useStore } from "../../hooks";
+import { playSound } from "../../utils";
 import { StyledTitle } from "../../styles";
 import YesNoModal from "../modals/YesNoModal";
 
@@ -214,6 +215,7 @@ export const HitItem: React.FC<HitItemProps> = ({
     const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
     addOrUpdateHit({ ...hit, scoop: updatedScoop });
     if (updatedScoop) {
+      playSound('chime');
       addHitToAccept({ ...hit, scoop: updatedScoop });
     } else {
       removeHitFromAccept(hit.hit_set_id);
@@ -221,8 +223,10 @@ export const HitItem: React.FC<HitItemProps> = ({
   }, [hit, addOrUpdateHit, addHitToAccept, removeHitFromAccept]);
 
   const handleAcceptHit = useCallback(() => {
+    window.alert('Accept clicked!');
     if (hit.caller_meets_requirements) {
       setButtonVisible(false);
+      playSound('chime');
       acceptHit(hit);
       setTimeout(() => setButtonVisible(true), 2000);
     } else if (hit.qualifications?.length) {
