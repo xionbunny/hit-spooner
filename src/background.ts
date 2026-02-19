@@ -1,6 +1,4 @@
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("HitSpooner Extension Installed");
-});
+chrome.runtime.onInstalled.addListener(() => { });
 
 const getMturkTab = async (): Promise<chrome.tabs.Tab | null> => {
   const tabs = await chrome.tabs.query({ url: "https://worker.mturk.com/*" });
@@ -59,8 +57,6 @@ const executeReturnHit = async (
       args: [hitSetId, taskId, assignmentId],
     });
 
-    console.log("[HitSpooner Background] executeScript result:", result);
-    
     if (!result || !Array.isArray(result) || result.length === 0) {
       return { success: false, error: 'No result from script - empty result array' };
     }
@@ -69,10 +65,9 @@ const executeReturnHit = async (
     return parsedResult.success 
       ? { success: true }
       : { success: false, error: `HTTP ${parsedResult.status}` };
-  } catch (error) {
-    console.error("[HitSpooner Background] executeScript error:", error);
-    return { success: false, error: `Script execution failed: ${String(error)}` };
-  }
+    } catch (error) {
+      return { success: false, error: `Script execution failed: ${String(error)}` };
+    }
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -100,8 +95,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         
         sendResponse(response);
       } catch (error) {
-        console.error("[HitSpooner Background] Return HIT error:", error);
-        
         if (createdTabId) {
           try {
             await chrome.tabs.remove(createdTabId);

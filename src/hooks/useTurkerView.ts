@@ -59,7 +59,7 @@ export const useTurkerView = (requesterIds: string[]) => {
         ...fetchedRequesters,
       }));
     } catch (error) {
-      console.error("Error fetching requester data:", error);
+      // Handle fetch errors silently
     }
   }, []);
 

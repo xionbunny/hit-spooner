@@ -11,12 +11,11 @@ import {
   newsTheme,
   blueTheme,
 } from "../../styles/themes";
-import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType, playSound } from "../../utils";
+import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType, playSound, safeParseInt } from "../../utils";
 import { useIndexedDb, loadHits as loadHitsFromDb } from "../useIndexedDb";
 import { IHitSpoonerStoreState } from "./IHitSpoonerStoreState";
 import { LocalStorageKeys } from "./LocalStorageKeys";
 
-const INDEXED_DB_BATCH_UPDATE_SIZE = 10;
 const MTURK_FETCH_DEBOUNCE_TIME = 80;
 
 const defaultHitFilters: IHitSearchFilter = {
@@ -32,15 +31,16 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
   const { addOrUpdateHit, addOrUpdateHits, loadHitsByPage, deleteHitFromIndexedDb } =
     useIndexedDb();
   let intervalRef: NodeJS.Timeout | null = null;
-
-  const safeParseInt = (value: string | null, defaultValue: number): number => {
-    const parsed = parseInt(value || "");
-    return isNaN(parsed) ? defaultValue : parsed;
-  };
+  let addQueueIntervalRef: NodeJS.Timeout | null = null;
 
   const clearIntervals = () => {
     if (intervalRef) {
       clearInterval(intervalRef);
+      intervalRef = null;
+    }
+    if (addQueueIntervalRef) {
+      clearInterval(addQueueIntervalRef);
+      addQueueIntervalRef = null;
     }
   };
 
@@ -235,7 +235,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       setSoundType: (soundType: string) => {
         localStorage.setItem(LocalStorageKeys.SoundType, soundType);
         set((state) => ({
-          config: { ...state.config, soundType: soundType },
+          config: { ...state.config, soundType },
         }));
       },
     },
@@ -304,37 +304,36 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       try {
         const fetchedHits = await fetchHITProjects(get().filters);
-        const blockedRequesters = get().blockedRequesters;
+        const blockedRequestersSet = new Set(get().blockedRequesters);
         const filteredHits = fetchedHits.filter(
-          (hit: IHitProject) => !blockedRequesters.includes(hit.requester_id)
+          (hit: IHitProject) => !blockedRequestersSet.has(hit.requester_id)
         );
         
         const allCachedHits = await loadHitsFromDb(get().filters);
-        const hitMap = new Map();
-        allCachedHits.forEach((hit: IHitProject) => {
-          hitMap.set(hit.hit_set_id, hit);
-        });
+        const hitMap = new Map<string, IHitProject>();
+        const hitsToAcceptSet = new Set(get().hitsToAccept.map(h => h.hit_set_id));
 
-        filteredHits.forEach((hit: IHitProject) => {
+        for (const hit of allCachedHits) {
+          hitMap.set(hit.hit_set_id, hit);
+        }
+
+        for (const hit of filteredHits) {
           const cachedHit = hitMap.get(hit.hit_set_id);
           hit.unavailable = false;
           if (cachedHit && (cachedHit.scoop === "scoop" || cachedHit.scoop === "shovel")) {
             hit.scoop = cachedHit.scoop;
           }
-          if (hit.scoop && !hit.unavailable) {
-            if (!get().hitsToAccept.some((h: IHitProject) => h.hit_set_id === hit.hit_set_id)) {
-              get().addHitToAccept(hit);
-            }
+          if (hit.scoop && !hit.unavailable && !hitsToAcceptSet.has(hit.hit_set_id)) {
+            get().addHitToAccept(hit);
           }
           hitMap.set(hit.hit_set_id, hit);
-        });
+        }
 
-        allCachedHits.forEach((cachedHit: IHitProject) => {
-          if (!filteredHits.some((hit: IHitProject) => hit.hit_set_id === cachedHit.hit_set_id)) {
+        for (const [hitId, cachedHit] of hitMap) {
+          if (!filteredHits.some((hit: IHitProject) => hit.hit_set_id === hitId)) {
             cachedHit.unavailable = true;
-            hitMap.set(cachedHit.hit_set_id, cachedHit);
           }
-        });
+        }
 
         const allHits = Array.from(hitMap.values());
         
@@ -365,15 +364,15 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
     setHitsPage: async (page: number) => {
       const state = get();
-      const { pageSize } = state.hits;
       const filters = state.filters;
+      const pageSize = safeParseInt(state.filters.pageSize, 50);
 
       set({ hits: { ...state.hits, loading: true, currentPage: page } });
 
       try {
         const [paginatedHits, totalHits] = await loadHitsByPage(
           page,
-          pageSize ?? 50,
+          pageSize,
           filters
         );
         set({
@@ -417,7 +416,6 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           loadingQueue: false,
         });
       } catch (error) {
-        console.error("Error fetching queue data:", error);
         set({ loadingQueue: false });
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
@@ -487,24 +485,19 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       let hitsToAccept = get().hitsToAccept;
       if (hitsToAccept.length === 0) {
-        console.log('[HitSpooner] handleAutomaticAcceptance: no hits to accept');
         return;
       }
-
-      console.log('[HitSpooner] handleAutomaticAcceptance: processing', hitsToAccept.length, 'hits');
 
       const hitToProcess = hitsToAccept[0];
       const { hit_set_id, accept_project_task_url } = hitToProcess;
 
       const currentHit = get().hits.data?.find((h) => h.hit_set_id === hit_set_id);
       if (!currentHit?.scoop) {
-        console.log('[HitSpooner] handleAutomaticAcceptance: no scoop on hit');
         get().removeHitFromAccept(hit_set_id);
         return;
       }
 
       try {
-        console.log('[HitSpooner] handleAutomaticAcceptance: attempting accept for', hit_set_id);
         const response = await fetch(`${accept_project_task_url}&format=json`, {
           credentials: "include",
         });
@@ -516,15 +509,13 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           data = null;
         }
 
-        console.log('[HitSpooner] handleAutomaticAcceptance: response:', response.status, data);
-
         const isSuccess = response.status === 200 && (data?.state === "Assigned" || data === null);
         
         if (isSuccess) {
-          console.log('[HitSpooner] Auto-accept success, playing sound');
-          playSound('chime');
           if (get().config.soundEnabled && currentHit) {
             announceHitCaught(get().config.soundType as SoundType);
+          } else {
+            playSound('chime');
           }
           switch (currentHit?.scoop) {
             case "scoop":
@@ -547,7 +538,6 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
               break;
           }
         } else if (response.status === 422 && data?.message?.includes("no more")) {
-          console.log('[HitSpooner] No more HITs available, removing from queue');
           get().removeHitFromAccept(hit_set_id);
           if (currentHit) {
             currentHit.unavailable = true;
@@ -602,11 +592,9 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           set((state) => ({
             queue: state.queue.filter((a) => a.assignment_id !== assignment.assignment_id),
           }));
-        } else {
-          console.error("[HitSpooner] Return HIT failed:", response?.error);
         }
       } catch (error) {
-        console.error("[HitSpooner] Return HIT error:", error);
+        // Handle return HIT errors silently
       }
     },
 
@@ -662,7 +650,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       addToQueue();
       intervalRef = setInterval(processQueue, interval);
-      setInterval(addToQueue, interval * taskQueue.length);
+      addQueueIntervalRef = setInterval(addToQueue, interval * taskQueue.length);
     },
   };
 });

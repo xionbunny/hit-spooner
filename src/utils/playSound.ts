@@ -164,20 +164,16 @@ let audioUnlocked = false;
 let audioUnlockSucceeded = false;
 
 const unlockAudio = (): void => {
-  console.log('[HitSpooner] unlockAudio called, audioUnlocked:', audioUnlocked, 'succeeded:', audioUnlockSucceeded);
   if (audioUnlockSucceeded) return;
   
   const audio = new Audio(`data:audio/wav;base64,${getSilentSound()}`);
   audio.volume = 0.01;
   audio.play()
     .then(() => { 
-      console.log('[HitSpooner] Audio unlocked successfully');
       audioUnlocked = true;
       audioUnlockSucceeded = true;
     })
-    .catch((e) => { 
-      console.log('[HitSpooner] Audio unlock will retry on next interaction');
-    });
+    .catch(() => { });
 };
 
 const isAutoplayBlocked = (e: unknown): boolean => {
@@ -205,34 +201,23 @@ const createAudioPlayer = (type: SoundType): HTMLAudioElement => {
 };
 
 export const playSound = (soundType: SoundType): void => {
-  console.log('[HitSpooner] playSound called with:', soundType);
-  
-  // Try to unlock audio first if not already unlocked
   if (!audioUnlockSucceeded) {
     unlockAudio();
   }
   
-  // Create and play immediately - user interaction should allow this
   const audio = new Audio();
   audio.src = `data:audio/wav;base64,${getSoundBase64(soundType)}`;
   audio.volume = DEFAULT_VOLUME;
   
   const playPromise = audio.play();
   if (playPromise !== undefined) {
-    playPromise.then(() => {
-      console.log('[HitSpooner] Sound played successfully');
-    }).catch(e => {
-      console.log('[HitSpooner] Audio play failed:', e);
-      // Fallback to speech synthesis which doesn't require user interaction
+    playPromise.catch(() => {
       try {
         const utterance = new SpeechSynthesisUtterance('HIT caught');
         utterance.rate = 2;
         utterance.pitch = 1.5;
         window.speechSynthesis.speak(utterance);
-        console.log('[HitSpooner] Speech synthesis played');
-      } catch (e2) {
-        console.log('[HitSpooner] Speech synthesis also failed:', e2);
-      }
+      } catch { }
     });
   }
 };
