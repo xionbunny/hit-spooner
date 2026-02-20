@@ -1,6 +1,5 @@
 const path = require("path");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
-const WebpackExtensionReloader = require("webpack-extension-reloader");
 const ReloadExtensionWebpackPlugin = require("./reloadExtensionWebpackPlugin");
 
 module.exports = {
@@ -42,9 +41,6 @@ module.exports = {
         { from: "public/popup.html", to: "." },
         { from: "public/postcss.config.cjs", to: "." },
       ],
-    }),
-    new WebpackExtensionReloader({
-      manifest: path.resolve(__dirname, "public", "manifest.json"),
     }),
     new ReloadExtensionWebpackPlugin(),
   ],

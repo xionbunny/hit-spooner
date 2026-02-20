@@ -163,4 +163,9 @@ export interface IHitSpoonerStoreState {
    * @returns A promise that resolves when the HIT is returned.
    */
   returnHit: (assignment: IHitAssignment) => Promise<void>;
+
+  /**
+   * Function to purge old HITs from the database.
+   */
+  purgeOldHits: () => Promise<void>;
 }

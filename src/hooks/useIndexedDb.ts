@@ -38,7 +38,7 @@ export const addOrUpdateHits = async (hits: IHitProject[]): Promise<void> => {
   const db = await getDb();
   const tx = db.transaction(STORE_NAME, "readwrite", { durability: "relaxed" });
   const store = tx.store;
-  
+
   for (const hit of hits) {
     const existingHit = await store.get(hit.hit_set_id);
     await store.put(existingHit ? { ...existingHit, ...hit } : hit);
@@ -50,8 +50,8 @@ export const loadHits = async (filters: IHitSearchFilter): Promise<IHitProject[]
   const db = await getDb();
   const allHits = await db.getAll(STORE_NAME);
   const minReward = filters.minReward ? parseFloat(filters.minReward) : 0;
-  
-  return minReward > 0 
+
+  return minReward > 0
     ? allHits.filter((hit) => hit.monetary_reward?.amount_in_dollars >= minReward)
     : allHits;
 };
@@ -73,6 +73,25 @@ export const deleteHit = async (hitId: string): Promise<void> => {
   await tx.done;
 };
 
+export const purgeOldHits = async (): Promise<void> => {
+  try {
+    const db = await getDb();
+    const allHits = await db.getAll(STORE_NAME);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    for (const hit of allHits) {
+      if (hit.last_seen && new Date(hit.last_seen) < sevenDaysAgo) {
+        await tx.store.delete(hit.hit_set_id);
+      }
+    }
+    await tx.done;
+  } catch (error) {
+    console.error("[HitSpooner] Failed to purge old hits:", error);
+  }
+};
+
 export const useIndexedDb = () => ({
   addOrUpdateHit,
   addOrUpdateHits,
@@ -80,6 +99,7 @@ export const useIndexedDb = () => ({
   loadHits,
   loadHitsByPage,
   deleteHitFromIndexedDb: deleteHit,
+  purgeOldHits,
 });
 
 export default useIndexedDb;

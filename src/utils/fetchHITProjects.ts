@@ -30,26 +30,37 @@ export const fetchHITProjects = async (
       const baseUrl = "https://worker.mturk.com/?";
       const url = `${baseUrl}${params.toString()}`;
 
-      const response = await fetchWithTimeout(url, { credentials: "include" }, FETCH_TIMEOUT_MS);
+      const response = await fetchWithTimeout(url, {
+        credentials: "include",
+        redirect: "error"
+      }, FETCH_TIMEOUT_MS);
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Redirected"); // Treat as session expired
+        }
         if (response.status === 429) {
           console.warn("[HitSpooner] Rate limited, waiting before retry...");
           await delay(2000);
           continue;
         }
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
+      try {
+        const data = await response.json();
 
-      if (!data.results || !Array.isArray(data.results)) {
-        break;
-      }
+        if (!data || !data.results || !Array.isArray(data.results)) {
+          break;
+        }
 
-      allHITs = allHITs.concat(data.results);
+        allHITs = allHITs.concat(data.results);
 
-      if (data.results.length < parseInt(pageSize)) {
+        if (data.results.length < parseInt(pageSize)) {
+          break;
+        }
+      } catch (parseError) {
+        console.error("[HitSpooner] Failed to parse page data:", parseError);
         break;
       }
 
@@ -58,9 +69,9 @@ export const fetchHITProjects = async (
     }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      console.error("[HitSpooner] Fetch timeout");
+      console.warn("[HitSpooner] Fetch timed out");
     } else {
-      console.error("[HitSpooner] Error fetching HITs:", error);
+      console.error("[HitSpooner] Error fetching HITs:", error instanceof Error ? error.message : "Unknown error");
     }
     throw error;
   }

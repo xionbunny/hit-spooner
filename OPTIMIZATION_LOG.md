@@ -36,3 +36,29 @@
 - Performance improvement: O(n) to O(1) for multiple array lookups in hot path
 - Bug fix: Fixed unavailable hit tracking
 - No functionality removed - all features preserved
+
+---
+
+## Date: 2026-02-20
+
+### Security Audit Fixes
+
+### 1. Removed vulnerable webpack-extension-reloader
+**File:** `package.json`
+- Removed `webpack-extension-reloader` from devDependencies (version ^1.1.4)
+- This package had a transitive dependency on `tmp` with a symlink vulnerability (CVE)
+- The package also required webpack 4, causing peer dependency conflicts
+
+**File:** `webpack.config.js`
+- Removed import of `WebpackExtensionReloader`
+- Removed plugin instantiation from webpack config
+- Development hot reload still works via custom `ReloadExtensionWebpackPlugin`
+
+### 2. Patched ajv ReDoS vulnerability
+**File:** `package-lock.json`
+- Updated `ajv` from 8.17.1 to 8.18.0 to patch ReDoS when using `$data` option
+
+### 3. Verified build
+- Build completes successfully
+- npm audit reports 0 vulnerabilities
+- Functionality preserved

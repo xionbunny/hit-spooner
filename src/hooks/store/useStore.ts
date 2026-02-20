@@ -28,7 +28,7 @@ const defaultHitFilters: IHitSearchFilter = {
 };
 
 export const useStore = create<IHitSpoonerStoreState>((set, get) => {
-  const { addOrUpdateHit, addOrUpdateHits, loadHitsByPage, deleteHitFromIndexedDb } =
+  const { addOrUpdateHit, addOrUpdateHits, loadHitsByPage, deleteHitFromIndexedDb, purgeOldHits } =
     useIndexedDb();
   let intervalRef: NodeJS.Timeout | null = null;
   let addQueueIntervalRef: NodeJS.Timeout | null = null;
@@ -97,7 +97,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     ),
     filters: JSON.parse(
       localStorage.getItem(LocalStorageKeys.HitSearchFilters) ??
-        JSON.stringify(defaultHitFilters)
+      JSON.stringify(defaultHitFilters)
     ),
     paused: false,
     hitsToAccept: [],
@@ -124,7 +124,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       },
       workspacePanelSizes: JSON.parse(
         localStorage.getItem(LocalStorageKeys.WorkspacePanelSizes) ||
-          "[0.3, 0.7]"
+        "[0.3, 0.7]"
       ),
       setWorkspacePanelSizes: debounce((sizes: number[]) => {
         localStorage.setItem(
@@ -138,7 +138,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       workspaceListSizes: JSON.parse(
         localStorage.getItem(LocalStorageKeys.WorkspaceListSizes) ||
-          "[0.5, 0.5]"
+        "[0.5, 0.5]"
       ),
       setWorkspaceListSizes: debounce((sizes: number[]) => {
         localStorage.setItem(
@@ -152,7 +152,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       hitTaskViewPanelSizes: JSON.parse(
         localStorage.getItem(LocalStorageKeys.TaskViewPanelSizes) ||
-          "[0.8, 0.2]"
+        "[0.8, 0.2]"
       ),
       setHitTaskViewPanelSizes: debounce((sizes) => {
         localStorage.setItem(
@@ -303,12 +303,6 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       }));
 
       try {
-        const fetchedHits = await fetchHITProjects(get().filters);
-        const blockedRequestersSet = new Set(get().blockedRequesters);
-        const filteredHits = fetchedHits.filter(
-          (hit: IHitProject) => !blockedRequestersSet.has(hit.requester_id)
-        );
-        
         const allCachedHits = await loadHitsFromDb(get().filters);
         const hitMap = new Map<string, IHitProject>();
         const hitsToAcceptSet = new Set(get().hitsToAccept.map(h => h.hit_set_id));
@@ -317,48 +311,85 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           hitMap.set(hit.hit_set_id, hit);
         }
 
-        for (const hit of filteredHits) {
-          const cachedHit = hitMap.get(hit.hit_set_id);
-          hit.unavailable = false;
-          if (cachedHit && (cachedHit.scoop === "scoop" || cachedHit.scoop === "shovel")) {
-            hit.scoop = cachedHit.scoop;
-          }
-          if (hit.scoop && !hit.unavailable && !hitsToAcceptSet.has(hit.hit_set_id)) {
-            get().addHitToAccept(hit);
-          }
-          hitMap.set(hit.hit_set_id, hit);
-        }
+        let filteredHits: IHitProject[] = [];
+        let fetchError: string | null = null;
 
-        for (const [hitId, cachedHit] of hitMap) {
-          if (!filteredHits.some((hit: IHitProject) => hit.hit_set_id === hitId)) {
-            cachedHit.unavailable = true;
+        try {
+          const fetchedHits = await fetchHITProjects(get().filters);
+          const blockedRequestersSet = new Set(get().blockedRequesters);
+          filteredHits = fetchedHits.filter(
+            (hit: IHitProject) => !blockedRequestersSet.has(hit.requester_id)
+          );
+
+          for (const hit of filteredHits) {
+            const cachedHit = hitMap.get(hit.hit_set_id);
+            hit.unavailable = false;
+            if (cachedHit && (cachedHit.scoop === "scoop" || cachedHit.scoop === "shovel")) {
+              hit.scoop = cachedHit.scoop;
+            }
+            if (hit.scoop && !hit.unavailable && !hitsToAcceptSet.has(hit.hit_set_id)) {
+              get().addHitToAccept(hit);
+            }
+            hitMap.set(hit.hit_set_id, hit);
           }
+
+          for (const [hitId, cachedHit] of hitMap) {
+            if (!filteredHits.some((hit: IHitProject) => hit.hit_set_id === hitId)) {
+              cachedHit.unavailable = true;
+            }
+          }
+
+          // Batch update database - ONLY write what changed to prevent flooding
+          try {
+            const hitsToUpdate = [...filteredHits];
+            const newlyUnavailable = Array.from(hitMap.values()).filter(h => h.unavailable && !allCachedHits.find(ch => ch.hit_set_id === h.hit_set_id && ch.unavailable));
+            hitsToUpdate.push(...newlyUnavailable);
+
+            if (hitsToUpdate.length > 0) {
+              await addOrUpdateHits(hitsToUpdate);
+            }
+
+            if (Math.random() < 0.05) {
+              await get().purgeOldHits();
+            }
+          } catch (dbError) {
+            console.error("[HitSpooner] Database update failed:", dbError);
+          }
+
+        } catch (error: any) {
+          console.error("[HitSpooner] Fetch failed:", error);
+          fetchError = error?.message === "Redirected" || error?.name === "TypeError"
+            ? "Session expired? Please log in to MTurk."
+            : "Failed to fetch HITs";
         }
 
         const allHits = Array.from(hitMap.values());
-        
-        if (allHits.length > 0) {
-          for (let i = 0; i < allHits.length; i += 10) {
-            const batch = allHits.slice(i, i + 10);
-            await Promise.all(batch.map((hit: IHitProject) => addOrUpdateHit(hit)));
-          }
-        }
+
+        // Limit state size to prevent memory leaks and UI lag
+        const available = allHits.filter(h => h && !h.unavailable);
+        const unavailable = allHits
+          .filter(h => h && h.unavailable)
+          .sort((a, b) => {
+            const timeA = new Date(a.last_updated_time || a.last_seen || a.creation_time || 0).getTime();
+            const timeB = new Date(b.last_updated_time || b.last_seen || b.creation_time || 0).getTime();
+            return timeB - timeA;
+          })
+          .slice(0, 500);
+
+        const limitedHits = [...available, ...unavailable];
 
         set({
           hits: {
-            data: allHits,
+            data: limitedHits,
             loading: false,
-            error: null,
+            error: fetchError,
           },
         });
-      } catch (error) {
-        set({
-          hits: {
-            data: null,
-            loading: false,
-            error: "Failed to fetch HITs",
-          },
-        });
+      } catch (globalError) {
+        console.error("[HitSpooner] Critical error in fetchAndUpdateHits:", globalError);
+        set((state) => ({
+          hits: { ...state.hits, loading: false, error: "Critical error. See console." },
+        }));
       }
     }, MTURK_FETCH_DEBOUNCE_TIME),
 
@@ -510,7 +541,7 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }
 
         const isSuccess = response.status === 200 && (data?.state === "Assigned" || data === null);
-        
+
         if (isSuccess) {
           if (get().config.soundEnabled && currentHit) {
             announceHitCaught(get().config.soundType as SoundType);
@@ -651,6 +682,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       addToQueue();
       intervalRef = setInterval(processQueue, interval);
       addQueueIntervalRef = setInterval(addToQueue, interval * taskQueue.length);
+    },
+
+    purgeOldHits: async () => {
+      await purgeOldHits();
     },
   };
 });

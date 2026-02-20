@@ -1,14 +1,19 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { keyframes, useTheme } from "@emotion/react";
+import { keyframes, useTheme, Theme } from "@emotion/react";
 import styled from "@emotion/styled";
 import { IHitProjectWithHourlyRate } from "@hit-spooner/api";
-import { Tooltip } from "@mantine/core";
+import { Tooltip, Badge } from "@mantine/core";
 import {
   IconAlertCircle,
   IconEye,
   IconStarFilled,
   IconUser,
   IconX,
+  IconCurrencyDollar,
+  IconThumbDown,
+  IconSpeakerphone,
+  IconClock,
+  IconPercentage,
 } from "@tabler/icons-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { GiSpoon } from "react-icons/gi";
@@ -116,10 +121,45 @@ const RequesterInfo = styled.div`
   padding-right: ${(props) => props.theme.spacing.xxs};
   color: ${(props) => props.theme.colors.primary[9]};
   font-size: ${(props) => props.theme.fontSizes.xs};
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: ${(props) => props.theme.spacing.xxs};
 
   &:hover {
     text-decoration: underline;
   }
+`;
+
+const RequesterNameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${(props) => props.theme.spacing.xxs};
+`;
+
+const RatingsContainer = styled.div`
+  display: flex;
+  gap: ${(props) => props.theme.spacing.xxs};
+  flex-wrap: wrap;
+  justify-content: flex-end;
+`;
+
+const RatingBadge = styled.div<{ ratingClass?: keyof Theme["other"]["turkerView"] }>`
+  font-size: ${(props) => props.theme.fontSizes.xs};
+  padding: 2px 6px;
+  height: auto;
+  line-height: 1.2;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: ${(props) => {
+    if (!props.ratingClass) return props.theme.colors.primary[3];
+    return props.theme.other.turkerView[props.ratingClass] || props.theme.colors.primary[3];
+  }};
+  color: ${(props) => props.theme.colors.primary[0]};
+  border: none;
+  cursor: pointer;
 `;
 
 const StyledButton = styled.a<{ isVisible: boolean }>`
@@ -243,7 +283,7 @@ export const HitItem: React.FC<HitItemProps> = ({
   }, [hit.hit_set_id, deleteHit]);
 
   const cleanTitle = useMemo(() => hit.title.replace(/\s*\(.*?\)\s*/g, " ").trim(), [hit.title]);
-  
+
   const bulletPoints = useMemo(() => {
     const matches = hit.title.match(/\((.*?)\)/g);
     return matches ? matches.map(m => m.slice(1, -1)) : [];
@@ -306,12 +346,56 @@ export const HitItem: React.FC<HitItemProps> = ({
             </Tooltip>
           </div>
           {!hideRequester && (
-            <RequesterInfo onClick={() => onRequesterClick?.(hit.requester_id)}>
-              {hit.requester_name}{" "}
-              {isFavorite ? (
-                <IconStarFilled size={18} color={theme.other.favoriteIcon} style={{ position: "relative", top: "3px" }} />
-              ) : (
-                <IconUser size={18} />
+            <RequesterInfo>
+              <RequesterNameRow onClick={() => onRequesterClick?.(hit.requester_id)}>
+                {hit.requester_name}{" "}
+                {isFavorite ? (
+                  <IconStarFilled size={18} color={theme.other.favoriteIcon} style={{ position: "relative", top: "3px" }} />
+                ) : (
+                  <IconUser size={18} />
+                )}
+              </RequesterNameRow>
+              {(hit.requesterInfo?.taskApprovalRate || hit.requesterRatings) && (
+                <RatingsContainer>
+                  {hit.requesterInfo?.taskApprovalRate && (
+                    <Tooltip label={`MTurk Approval Rate: ${hit.requesterInfo.taskApprovalRate}`} position="top" style={tooltipStyle}>
+                      <RatingBadge
+                        ratingClass={parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 99 ? "success" : parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 95 ? "warning" : "danger"}
+                      >
+                        <IconPercentage size={12} />
+                        {hit.requesterInfo.taskApprovalRate}
+                      </RatingBadge>
+                    </Tooltip>
+                  )}
+                  {hit.requesterRatings && (
+                    <>
+                      <Tooltip label={`Pay: ${hit.requesterRatings.pay.text}`} position="top" style={tooltipStyle}>
+                        <RatingBadge
+                          ratingClass={hit.requesterRatings.pay.class as keyof Theme["other"]["turkerView"]}
+                        >
+                          <IconCurrencyDollar size={12} />
+                          {hit.requesterRatings.pay.text}
+                        </RatingBadge>
+                      </Tooltip>
+                      <Tooltip label={`Communication: ${hit.requesterRatings.comm.text}`} position="top" style={tooltipStyle}>
+                        <RatingBadge
+                          ratingClass={hit.requesterRatings.comm.class as keyof Theme["other"]["turkerView"]}
+                        >
+                          <IconSpeakerphone size={12} />
+                          {hit.requesterRatings.comm.text}
+                        </RatingBadge>
+                      </Tooltip>
+                      <Tooltip label={`Speed: ${hit.requesterRatings.fast.text}`} position="top" style={tooltipStyle}>
+                        <RatingBadge
+                          ratingClass={hit.requesterRatings.fast.class as keyof Theme["other"]["turkerView"]}
+                        >
+                          <IconClock size={12} />
+                          {hit.requesterRatings.fast.text}
+                        </RatingBadge>
+                      </Tooltip>
+                    </>
+                  )}
+                </RatingsContainer>
               )}
             </RequesterInfo>
           )}

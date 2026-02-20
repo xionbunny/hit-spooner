@@ -7,6 +7,7 @@ import RequesterModal from "../modals/RequesterModal";
 import { useStore } from "../../hooks";
 import { themedScrollbarStyles } from "../../styles";
 import useRequesterHourlyRates from "../../hooks/useRequesterHourlyRates";
+import { useTurkerView } from "../../hooks/useTurkerView";
 import HitQueue from "./HitQueue";
 
 const WorkspaceContainer = styled.div`
@@ -26,19 +27,19 @@ const HitListContainer = styled.div`
 `;
 
 const Workspace: React.FC = () => {
-  const { hits, workspacePanelSizes, setWorkspacePanelSizes, workspaceListSizes, setWorkspaceListSizes, 
-          workspaceAvailableColumns, setWorkspaceAvailableColumns, workspaceUnavailableColumns, 
-          setWorkspaceUnavailableColumns } = useStore(useCallback((state) => ({
-    hits: state.hits.data,
-    workspacePanelSizes: state.config.workspacePanelSizes,
-    setWorkspacePanelSizes: state.config.setWorkspacePanelSizes,
-    workspaceListSizes: state.config.workspaceListSizes,
-    setWorkspaceListSizes: state.config.setWorkspaceListSizes,
-    workspaceAvailableColumns: state.config.workspaceAvailableColumns,
-    setWorkspaceAvailableColumns: state.config.setWorkspaceAvailableColumns,
-    workspaceUnavailableColumns: state.config.workspaceUnavailableColumns,
-    setWorkspaceUnavailableColumns: state.config.setWorkspaceUnavailableColumns,
-  }), []));
+  const { hits, workspacePanelSizes, setWorkspacePanelSizes, workspaceListSizes, setWorkspaceListSizes,
+    workspaceAvailableColumns, setWorkspaceAvailableColumns, workspaceUnavailableColumns,
+    setWorkspaceUnavailableColumns } = useStore(useCallback((state) => ({
+      hits: state.hits.data,
+      workspacePanelSizes: state.config.workspacePanelSizes,
+      setWorkspacePanelSizes: state.config.setWorkspacePanelSizes,
+      workspaceListSizes: state.config.workspaceListSizes,
+      setWorkspaceListSizes: state.config.setWorkspaceListSizes,
+      workspaceAvailableColumns: state.config.workspaceAvailableColumns,
+      setWorkspaceAvailableColumns: state.config.setWorkspaceAvailableColumns,
+      workspaceUnavailableColumns: state.config.workspaceUnavailableColumns,
+      setWorkspaceUnavailableColumns: state.config.setWorkspaceUnavailableColumns,
+    }), []));
 
   const [selectedRequesterId, setSelectedRequesterId] = useState<string | null>(null);
 
@@ -48,13 +49,15 @@ const Workspace: React.FC = () => {
   );
 
   const requesterHourlyRates = useRequesterHourlyRates(requesterIds);
+  const { requesters } = useTurkerView(requesterIds);
 
   const hitsWithRates = useMemo(
     () => hits?.map((hit) => ({
       ...hit,
       hourlyRate: requesterHourlyRates[hit.requester_id] || "-",
+      requesterRatings: requesters[hit.requester_id]?.ratings,
     })) || [],
-    [hits, requesterHourlyRates]
+    [hits, requesterHourlyRates, requesters]
   );
 
   const availableHits = useMemo(
@@ -63,7 +66,14 @@ const Workspace: React.FC = () => {
   );
 
   const unavailableHits = useMemo(
-    () => hitsWithRates.filter((hit) => hit.unavailable),
+    () => hitsWithRates
+      .filter((hit) => hit.unavailable)
+      .sort((a, b) => {
+        const timeA = new Date(a.last_updated_time || 0).getTime();
+        const timeB = new Date(b.last_updated_time || 0).getTime();
+        return timeB - timeA;
+      })
+      .slice(0, 100),
     [hitsWithRates]
   );
 
