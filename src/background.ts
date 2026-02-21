@@ -1,4 +1,6 @@
-chrome.runtime.onInstalled.addListener(() => { });
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("HitSpooner extension installed");
+});
 
 const getMturkTab = async (): Promise<chrome.tabs.Tab | null> => {
   const tabs = await chrome.tabs.query({ url: "https://worker.mturk.com/*" });
@@ -45,28 +47,76 @@ const executeReturnHit = async (
   assignmentId: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    console.log("Executing return hit script on tab:", tabId);
     const result = await chrome.scripting.executeScript({
       target: { tabId },
       func: (hitSetId: string, taskId: string, assignmentId: string) => {
-        const getCsrfToken = (): string | null => {
-          const metaTag = document.querySelector('meta[name="csrf-token"]');
-          return metaTag?.getAttribute('content') || null;
-        };
+        try {
+          const getCsrfToken = (): string | null => {
+            const metaTag = document.querySelector('meta[name="csrf-token"]');
+            return metaTag?.getAttribute('content') || null;
+          };
 
-        const csrfToken = getCsrfToken();
-        const returnUrl = `https://worker.mturk.com/projects/${hitSetId}/tasks/${taskId}?assignment_id=${assignmentId}&ref=w_wp_rtrn_top`;
+          const csrfToken = getCsrfToken();
+          if (!csrfToken) {
+            return JSON.stringify({
+              success: false,
+              status: 403,
+              error: 'CSRF token not found',
+              url: 'N/A'
+            });
+          }
 
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', returnUrl, false);
-        xhr.withCredentials = true;
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-        xhr.send(`_method=delete&authenticity_token=${encodeURIComponent(csrfToken || '')}`);
+          const returnUrl = `https://worker.mturk.com/projects/${hitSetId}/tasks/${taskId}?assignment_id=${assignmentId}&ref=w_wp_rtrn_top`;
+          
+          const allButtons = document.querySelectorAll('button');
+          let returnButton: HTMLButtonElement | null = null;
+          
+          for (let i = 0; i < allButtons.length; i++) {
+            const button = allButtons[i];
+            const buttonText = button.textContent || button.innerText || '';
+            if (buttonText.trim().toLowerCase().includes('return')) {
+              returnButton = button as HTMLButtonElement;
+              break;
+            }
+          }
 
-        return JSON.stringify({
-          success: xhr.status >= 200 && xhr.status < 400,
-          status: xhr.status,
-          url: returnUrl
-        });
+          if (returnButton) {
+            returnButton.click();
+            return JSON.stringify({
+              success: true,
+              status: 200,
+              url: returnUrl
+            });
+          }
+
+          const returnForm = document.querySelector('form[action*="return"]') || 
+                            document.querySelector('form[method="post"]');
+          
+          if (returnForm) {
+            (returnForm as HTMLFormElement).submit();
+            return JSON.stringify({
+              success: true,
+              status: 200,
+              url: returnUrl
+            });
+          }
+
+          window.location.href = returnUrl;
+          return JSON.stringify({
+            success: true,
+            status: 200,
+            url: returnUrl
+          });
+          
+        } catch (error) {
+          return JSON.stringify({
+            success: false,
+            status: 500,
+            error: `Network error: ${String(error)}`,
+            url: 'N/A'
+          });
+        }
       },
       args: [hitSetId, taskId, assignmentId],
     });
@@ -75,11 +125,20 @@ const executeReturnHit = async (
       return { success: false, error: 'No result from script - empty result array' };
     }
 
+    if (!result[0].result) {
+      return { success: false, error: 'Script returned no data' };
+    }
+
     const parsedResult = JSON.parse(result[0].result || '{}');
-    return parsedResult.success
-      ? { success: true }
-      : { success: false, error: `HTTP ${parsedResult.status}` };
+    
+    if (parsedResult.success) {
+      return { success: true };
+    } else {
+      const errorMessage = parsedResult.error || (parsedResult.status ? `HTTP ${parsedResult.status}` : 'Unknown error');
+      return { success: false, error: errorMessage };
+    }
   } catch (error) {
+    console.error("Error executing return hit script:", error);
     return { success: false, error: `Script execution failed: ${String(error)}` };
   }
 };
@@ -90,6 +149,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       let createdTabId: number | null = null;
 
       try {
+        console.log("Processing RETURN_HIT request:", message.payload);
         let tab = await getMturkTab();
         if (!tab?.id) {
           tab = await createMturkTab();
@@ -98,22 +158,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         const { hitSetId, taskId, assignmentId } = message.payload;
         const response = await executeReturnHit(tab.id!, hitSetId, taskId, assignmentId);
+        console.log("Return HIT response:", response);
 
         if (createdTabId) {
           try {
             await chrome.tabs.remove(createdTabId);
           } catch {
-            // Tab already closed
           }
         }
 
         sendResponse(response);
       } catch (error) {
+        console.error("Error processing RETURN_HIT message:", error);
         if (createdTabId) {
           try {
             await chrome.tabs.remove(createdTabId);
           } catch {
-            // Tab already closed
           }
         }
 

@@ -172,6 +172,15 @@ const unlockAudio = (): void => {
     .then(() => { 
       audioUnlocked = true;
       audioUnlockSucceeded = true;
+      // Remove event listeners once audio is unlocked to prevent memory leaks
+      const unlockOnInteraction = (window as any)._unlockOnInteraction;
+      if (unlockOnInteraction) {
+        document.removeEventListener('click', unlockOnInteraction, true);
+        document.removeEventListener('keydown', unlockOnInteraction, true);
+        document.removeEventListener('touchstart', unlockOnInteraction, true);
+        document.removeEventListener('mousedown', unlockOnInteraction, true);
+        delete (window as any)._unlockOnInteraction;
+      }
     })
     .catch(() => { });
 };
@@ -241,4 +250,7 @@ if (typeof window !== 'undefined') {
   document.addEventListener('keydown', unlockOnInteraction, true);
   document.addEventListener('touchstart', unlockOnInteraction, true);
   document.addEventListener('mousedown', unlockOnInteraction, true);
+  
+  // Store the listener function for proper cleanup
+  (window as any)._unlockOnInteraction = unlockOnInteraction;
 }

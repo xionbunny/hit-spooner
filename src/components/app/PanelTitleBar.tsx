@@ -9,12 +9,12 @@ const StyledPanelTitleBar = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2px;
+  padding: 4px;
   background-color: ${(props) => props.theme.colors.primary[6]};
   border-bottom: 1px solid ${(props) => props.theme.colors.primary[4]};
   z-index: 1;
   width: 100%;
-  height: 34px;
+  min-height: 48px;
 `;
 
 const StyledTitle = styled.div`
@@ -64,6 +64,10 @@ interface IPanelTitleBarProps {
   setColumns?: (value: number) => void;
   filterText?: string;
   setFilterText?: (value: string) => void;
+  totalEarnings?: number;
+  totalEarningsPerHour?: number;
+  averageRewardPerHit?: number;
+  totalDuration?: number;
 }
 
 const PanelTitleBar: React.FC<IPanelTitleBarProps> = ({
@@ -72,6 +76,10 @@ const PanelTitleBar: React.FC<IPanelTitleBarProps> = ({
   setColumns,
   filterText,
   setFilterText,
+  totalEarnings,
+  totalEarningsPerHour,
+  averageRewardPerHit,
+  totalDuration,
 }) => {
   const theme = useTheme();
 
@@ -81,9 +89,63 @@ const PanelTitleBar: React.FC<IPanelTitleBarProps> = ({
     }
   };
 
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
   return (
     <StyledPanelTitleBar>
-      <StyledTitle>{title}</StyledTitle>
+      <StyledTitle>
+        {title}
+        {typeof totalEarnings !== "undefined" && (
+          <span style={{ 
+            fontSize: "0.8rem", 
+            marginLeft: "12px", 
+            fontWeight: "normal",
+            padding: "3px 10px",
+            backgroundColor: theme.colors.primary[1],
+            borderRadius: "6px",
+            border: `1px solid ${theme.colors.primary[3]}`,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            flexWrap: "wrap"
+          }}>
+            <span>Total: ${totalEarnings.toFixed(2)}</span>
+            {typeof totalEarningsPerHour !== "undefined" && (
+              <span style={{ 
+                paddingLeft: "8px",
+                borderLeft: `1px solid ${theme.colors.primary[3]}`
+              }}>
+                ${totalEarningsPerHour.toFixed(2)}/hr
+              </span>
+            )}
+            {typeof averageRewardPerHit !== "undefined" && (
+              <span style={{ 
+                paddingLeft: "8px",
+                borderLeft: `1px solid ${theme.colors.primary[3]}`
+              }}>
+                Avg: ${averageRewardPerHit.toFixed(2)}
+              </span>
+            )}
+            {typeof totalDuration !== "undefined" && (
+              <span style={{ 
+                paddingLeft: "8px",
+                borderLeft: `1px solid ${theme.colors.primary[3]}`
+              }}>
+                Time: {formatDuration(totalDuration)}
+              </span>
+            )}
+          </span>
+        )}
+      </StyledTitle>
       {columns !== undefined && setColumns !== undefined && (
         <Slider
           min={1}

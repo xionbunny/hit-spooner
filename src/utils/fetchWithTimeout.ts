@@ -5,23 +5,29 @@
  * @param timeout - Timeout in milliseconds
  * @returns Promise<Response>
  */
-export const fetchWithTimeout = async (
+export const fetchWithTimeout = (
   url: string,
   options: RequestInit = {},
   timeout: number
-): Promise<Response> => {
+): { promise: Promise<Response>; abort: () => void } => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+  const promise = fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).then(response => {
     clearTimeout(timeoutId);
     return response;
-  } catch (error) {
+  }).catch(error => {
     clearTimeout(timeoutId);
     throw error;
-  }
+  });
+
+  const abort = () => {
+    controller.abort();
+    clearTimeout(timeoutId);
+  };
+
+  return { promise, abort };
 };

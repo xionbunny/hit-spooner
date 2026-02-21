@@ -4,6 +4,12 @@ import { useTheme } from "@emotion/react";
 import { Table, Progress, ActionIcon, Tooltip } from "@mantine/core";
 import { IconArrowBack } from "@tabler/icons-react";
 import { useStore } from "../../hooks";
+import { 
+  useTotalEarnings, 
+  useTotalEarningsPerHour, 
+  useAverageRewardPerHit, 
+  useTotalDuration 
+} from "../../hooks/store/useStore";
 import { IHitAssignment } from "@hit-spooner/api";
 import PanelTitleBar from "../app/PanelTitleBar";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -67,6 +73,11 @@ const HitQueue: React.FC = () => {
     returnHit: state.returnHit,
   }));
 
+  const totalEarnings = useStore(useTotalEarnings);
+  const totalEarningsPerHour = useStore(useTotalEarningsPerHour);
+  const averageRewardPerHit = useStore(useAverageRewardPerHit);
+  const totalDuration = useStore(useTotalDuration);
+
   const theme = useTheme();
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
@@ -111,7 +122,13 @@ const HitQueue: React.FC = () => {
   if (queue.length === 0) {
     return (
       <>
-        <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
+      <PanelTitleBar 
+        title={`Your HITs Queue (${queue.length})`}
+        totalEarnings={totalEarnings}
+        totalEarningsPerHour={totalEarningsPerHour}
+        averageRewardPerHit={averageRewardPerHit}
+        totalDuration={totalDuration}
+      />
         <CenteredText>You don't currently have any HITs accepted.</CenteredText>
       </>
     );
@@ -119,7 +136,13 @@ const HitQueue: React.FC = () => {
 
   return (
     <>
-      <PanelTitleBar title={`Your HITs Queue (${queue.length})`} />
+      <PanelTitleBar 
+        title={`Your HITs Queue (${queue.length})`}
+        totalEarnings={totalEarnings}
+        totalEarningsPerHour={totalEarningsPerHour}
+        averageRewardPerHit={averageRewardPerHit}
+        totalDuration={totalDuration}
+      />
       <StyledTable highlightOnHover verticalSpacing="sm" striped>
         <thead>
           <StyledTableHeaderRow>

@@ -5,6 +5,8 @@ import {
 import styled from "@emotion/styled";
 import { MantineProvider, MantineTheme } from "@mantine/core";
 import "@mantine/core/styles.css";
+import { Notifications } from "@mantine/notifications";
+import "@mantine/notifications/styles.css";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Workspace from "../workspace/Workspace";
 import HitCompletePage from "./HitCompletePage";
@@ -84,6 +86,7 @@ const App: React.FC = () => {
     const observer = new MutationObserver(checkConditions);
     observer.observe(mainContent, { childList: true, subtree: true });
 
+    // Always disconnect observer when effect cleans up, regardless of state
     return () => observer.disconnect();
   }, [isHitSpoonerUrl, startUpdateIntervals, fetchAndUpdateHitsQueue]);
 
@@ -102,6 +105,7 @@ const App: React.FC = () => {
     <EmotionThemeProvider theme={theme}>
       <MantineProvider theme={theme}>
         <GlobalStyles />
+        <Notifications position="top-right" />
         <MainContainer>
           {showHitComplete ? (
             <>

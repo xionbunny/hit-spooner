@@ -6,10 +6,12 @@ const FETCH_TIMEOUT_MS = 10000;
 
 export const fetchDashboardData = async (): Promise<IDashboardData> => {
   try {
-    const response = await fetchWithTimeout(DASHBOARD_URL, {
+    const { promise } = fetchWithTimeout(DASHBOARD_URL, {
       credentials: "include",
       redirect: "error"
     }, FETCH_TIMEOUT_MS);
+    
+    const response = await promise;
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {

@@ -30,10 +30,12 @@ export const fetchHITProjects = async (
       const baseUrl = "https://worker.mturk.com/?";
       const url = `${baseUrl}${params.toString()}`;
 
-      const response = await fetchWithTimeout(url, {
+      const { promise } = fetchWithTimeout(url, {
         credentials: "include",
         redirect: "error"
       }, FETCH_TIMEOUT_MS);
+      
+      const response = await promise;
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {

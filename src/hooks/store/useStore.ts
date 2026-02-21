@@ -1,6 +1,7 @@
 import { IHitProject, IHitSearchFilter, IHitAssignment } from "@hit-spooner/api";
 import { debounce } from "lodash";
 import { create } from "zustand";
+import { notifications } from "@mantine/notifications";
 import {
   darkTheme,
   lightTheme,
@@ -15,6 +16,51 @@ import { fetchDashboardData, fetchHITProjects, announceHitCaught, SoundType, pla
 import { useIndexedDb, loadHits as loadHitsFromDb } from "../useIndexedDb";
 import { IHitSpoonerStoreState } from "./IHitSpoonerStoreState";
 import { LocalStorageKeys } from "./LocalStorageKeys";
+
+// Helper selectors for queue earnings calculations
+export const useTotalEarnings = (state: any) =>
+  state.queue.reduce((total: number, assignment: any) => {
+    return total + assignment.project.monetary_reward.amount_in_dollars;
+  }, 0);
+
+export const useTotalEarningsPerHour = (state: any) => {
+  const totalReward = state.queue.reduce((total: number, assignment: any) => {
+    return total + assignment.project.monetary_reward.amount_in_dollars;
+  }, 0);
+
+  const totalDurationHours = state.queue.reduce((total: number, assignment: any) => {
+    const durationSeconds = assignment.project.assignment_duration_in_seconds || 0;
+    return total + (durationSeconds / 3600); // Convert to hours
+  }, 0);
+
+  return totalDurationHours > 0 ? totalReward / totalDurationHours : 0;
+};
+
+export const useAverageRewardPerHit = (state: any) => {
+  const totalReward = state.queue.reduce((total: number, assignment: any) => {
+    return total + assignment.project.monetary_reward.amount_in_dollars;
+  }, 0);
+
+  return state.queue.length > 0 ? totalReward / state.queue.length : 0;
+};
+
+export const useTotalDuration = (state: any) => {
+  return state.queue.reduce((total: number, assignment: any) => {
+    const durationSeconds = assignment.project.assignment_duration_in_seconds || 0;
+    return total + durationSeconds;
+  }, 0);
+};
+
+export const formatDuration = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
 const MTURK_FETCH_DEBOUNCE_TIME = 80;
 
@@ -623,9 +669,38 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
           set((state) => ({
             queue: state.queue.filter((a) => a.assignment_id !== assignment.assignment_id),
           }));
+          notifications.show({
+            title: "HIT Returned",
+            message: "The HIT has been successfully returned",
+            color: "teal",
+            style: { backgroundColor: "#2B7A78", color: "#FFFFFF" },
+            styles: {
+              title: { color: "#FFFFFF" },
+              description: { color: "#FFFFFF" },
+            },
+          });
+        } else {
+          const errorMessage = response?.error || "Failed to return HIT - unknown error";
+          console.error("Failed to return HIT:", errorMessage);
+          notifications.show({
+            title: "Failed to Return HIT",
+            message: errorMessage,
+            color: "orange",
+            style: { backgroundColor: "#F39C12", color: "#FFFFFF" },
+            styles: {
+              title: { color: "#FFFFFF" },
+              description: { color: "#FFFFFF" },
+            },
+          });
         }
       } catch (error) {
-        // Handle return HIT errors silently
+        const errorMessage = error instanceof Error ? error.message : "Failed to return HIT - unexpected error";
+        console.error("Error returning HIT:", errorMessage);
+        notifications.show({
+          title: "Failed to Return HIT",
+          message: errorMessage,
+          color: "red",
+        });
       }
     },
 

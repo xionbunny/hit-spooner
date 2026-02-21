@@ -33,7 +33,7 @@ export const useActivityData = () => {
 
         // Fetching data for the last three days
         const responses = await Promise.allSettled(
-          urls.map((url) => axios.get(url))
+          urls.map((url) => axios.get(url, { timeout: 10000 }))
         );
 
         const combinedResults = responses.flatMap((result) => {
