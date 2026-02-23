@@ -110,6 +110,9 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
       const data = await response.json();
 
+        // Successfully fetched queue - user is logged in
+        get().setLoggedIn(true);
+
       if (data?.state === "Assigned") {
         hit.unavailable = true;
         await addOrUpdateHit(hit);
@@ -147,6 +150,10 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
     ),
     paused: false,
     hitsToAccept: [],
+    isLoggedIn: false,
+    setLoggedIn: (loggedIn: boolean) => {
+      set({ isLoggedIn: loggedIn });
+    },
 
     config: {
       theme: localStorage.getItem(LocalStorageKeys.Theme) || "light",
@@ -296,14 +303,24 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
     blockRequester: (requesterId: string) => {
       set((state) => {
-        const updatedBlockedRequesters = [
-          ...state.blockedRequesters,
-          requesterId,
-        ];
+        const isAlreadyBlocked = state.blockedRequesters.some(
+          (r) => r === requesterId
+        );
+
+        let updatedBlockedRequesters;
+        if (isAlreadyBlocked) {
+          updatedBlockedRequesters = state.blockedRequesters.filter(
+            (r) => r !== requesterId
+          );
+        } else {
+          updatedBlockedRequesters = [...state.blockedRequesters, requesterId];
+        }
+
         localStorage.setItem(
           LocalStorageKeys.BlockedRequesters,
           JSON.stringify(updatedBlockedRequesters)
         );
+
         return { blockedRequesters: updatedBlockedRequesters };
       });
     },
@@ -362,6 +379,8 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
 
         try {
           const fetchedHits = await fetchHITProjects(get().filters);
+          // Successfully fetched HITs - user is logged in
+          get().setLoggedIn(true);
           const blockedRequestersSet = new Set(get().blockedRequesters);
           filteredHits = fetchedHits.filter(
             (hit: IHitProject) => !blockedRequestersSet.has(hit.requester_id)
@@ -487,6 +506,9 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
         }
 
         const data = await response.json();
+
+        // Successfully fetched queue - user is logged in
+        get().setLoggedIn(true);
 
         set({
           queue: data.tasks || [],

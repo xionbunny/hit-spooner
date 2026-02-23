@@ -120,6 +120,18 @@ export interface IHitSpoonerStoreState {
   togglePause: () => void;
 
   /**
+   * Whether the user is logged in to MTurk.
+   */
+  isLoggedIn: boolean;
+
+  /**
+   * Function to update the logged in status.
+   *
+   * @param loggedIn - Whether the user is logged in.
+   */
+  setLoggedIn: (loggedIn: boolean) => void;
+
+  /**
    * Queue of HIT assignments.
    */
   queue: IHitAssignment[];

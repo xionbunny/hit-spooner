@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "main": "dist/background.js",
   "scripts": {
-    "build": "webpack --mode production && yarn reload-extension",
+    "build": "webpack --mode production && npm run reload-extension",
+    "build:noreload": "webpack --mode production",
     "serve": "webpack --watch ",
     "reload-extension": "node reloadExtensions.js"
   },

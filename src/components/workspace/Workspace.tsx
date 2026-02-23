@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { Allotment } from "allotment";
 import styled from "@emotion/styled";
 import "allotment/dist/style.css";
 import HitList from "./HitList";
 import RequesterModal from "../modals/RequesterModal";
+import LoggedOutModal from "../modals/LoggedOutModal";
 import { useStore } from "../../hooks";
 import { themedScrollbarStyles } from "../../styles";
 import useRequesterHourlyRates from "../../hooks/useRequesterHourlyRates";
@@ -42,6 +43,10 @@ const Workspace: React.FC = () => {
     }), []));
 
   const [selectedRequesterId, setSelectedRequesterId] = useState<string | null>(null);
+  const [isLoggedOutModalOpen, setIsLoggedOutModalOpen] = useState(false);
+  const { isLoggedIn } = useStore((state) => ({
+    isLoggedIn: state.isLoggedIn,
+  }));
 
   const requesterIds = useMemo(
     () => hits ? [...new Set(hits.map((hit) => hit.requester_id))] : [],
@@ -85,6 +90,11 @@ const Workspace: React.FC = () => {
     setSelectedRequesterId(null);
   }, []);
 
+  // Effect to show logged out modal when not logged in
+  useEffect(() => {
+    setIsLoggedOutModalOpen(!isLoggedIn);
+  }, [isLoggedIn]);
+
   return (
     <WorkspaceContainer>
       <Allotment defaultSizes={workspacePanelSizes} onChange={setWorkspacePanelSizes}>
@@ -118,6 +128,11 @@ const Workspace: React.FC = () => {
           requesterId={selectedRequesterId}
         />
       )}
+
+      <LoggedOutModal
+        isOpen={isLoggedOutModalOpen}
+        onClose={() => setIsLoggedOutModalOpen(false)}
+      />
     </WorkspaceContainer>
   );
 };
