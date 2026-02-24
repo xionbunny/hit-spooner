@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import styled from "@emotion/styled";
 import { useTheme } from "@emotion/react";
 import { Table, Progress, ActionIcon, Tooltip } from "@mantine/core";
@@ -12,7 +12,7 @@ import {
 } from "../../hooks/store/useStore";
 import { IHitAssignment } from "@hit-spooner/api";
 import PanelTitleBar from "../app/PanelTitleBar";
-import { formatDistanceToNowStrict } from "date-fns";
+import { formatDistanceToNowStrict, format } from "date-fns";
 import YesNoModal from "../modals/YesNoModal";
 
 const StyledTable = styled(Table)`
@@ -82,6 +82,15 @@ const HitQueue: React.FC = () => {
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [assignmentToReturn, setAssignmentToReturn] = useState<IHitAssignment | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
 
   const handleRowClick = useCallback((assignment: IHitAssignment) => {
     const url = `https://worker.mturk.com/projects/${assignment.project.hit_set_id}/tasks/${assignment.task_id}?assignment_id=${assignment.assignment_id}`;
@@ -109,6 +118,17 @@ const HitQueue: React.FC = () => {
     const remaining = ((deadlineTime - now) / 1000 / duration) * 100;
     return Math.max(0, Math.min(remaining, 100));
   }, []);
+
+  const getRemainingTimeColor = useCallback((deadline: string) => {
+    const deadlineTime = new Date(deadline).getTime();
+    const remainingSeconds = Math.floor((deadlineTime - currentTime) / 1000);
+    
+    // Use theme colors - map urgency to color intensity
+    if (remainingSeconds < 0) return theme.colors.primary[9]; // Expired - dark color
+    if (remainingSeconds < 600) return "#dc2626"; // < 10 minutes - red
+    if (remainingSeconds < 1800) return "#f59e0b"; // 10-30 minutes - amber/orange
+    return "#16a34a"; // > 30 minutes - green
+  }, [currentTime, theme.colors.primary[9]]);
 
   const returnModalMessage = assignmentToReturn ? (
     <div>
@@ -164,10 +184,22 @@ const HitQueue: React.FC = () => {
                 </TitleCell>
                 <StyledTableCell>${assignment.project.monetary_reward.amount_in_dollars.toFixed(2)}</StyledTableCell>
                 <StyledTableCell>
-                  <div style={{ marginBottom: "4px" }}>
-                    {formatDistanceToNowStrict(new Date(assignment.deadline), { addSuffix: true })}
-                  </div>
-                  <Progress value={calculateTimeRemainingPercentage(assignment.deadline, duration)} size="xs" color="blue" />
+                  <Tooltip 
+                    label={format(new Date(assignment.deadline), "PPPpp")} 
+                    position="top" 
+                    styles={tooltipStyles(theme)}
+                  >
+                    <span style={{ 
+                      color: getRemainingTimeColor(assignment.deadline),
+                      fontWeight: "600",
+                      display: "inline-block"
+                    }}>
+                      {formatDistanceToNowStrict(new Date(assignment.deadline), {
+                        addSuffix: true,
+                        roundingMethod: 'floor'
+                      })}
+                    </span>
+                  </Tooltip>
                 </StyledTableCell>
                 <StyledTableCell>
                   <Tooltip label="Return HIT" position="left" styles={tooltipStyles(theme)}>

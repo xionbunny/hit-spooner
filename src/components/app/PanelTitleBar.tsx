@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import styled from "@emotion/styled";
 import { Slider, TextInput, Tooltip } from "@mantine/core";
 import { useTheme } from "@emotion/react";
@@ -82,6 +82,7 @@ const PanelTitleBar: React.FC<IPanelTitleBarProps> = ({
   totalDuration,
 }) => {
   const theme = useTheme();
+  const [statsExpanded, setStatsExpanded] = useState(false);
 
   const handleClearFilter = () => {
     if (setFilterText) {
@@ -105,43 +106,52 @@ const PanelTitleBar: React.FC<IPanelTitleBarProps> = ({
       <StyledTitle>
         {title}
         {typeof totalEarnings !== "undefined" && (
-          <span style={{ 
-            fontSize: "0.8rem", 
-            marginLeft: "12px", 
-            fontWeight: "normal",
-            padding: "3px 10px",
-            backgroundColor: theme.colors.primary[1],
-            borderRadius: "6px",
-            border: `1px solid ${theme.colors.primary[3]}`,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            flexWrap: "wrap"
-          }}>
+          <span
+            style={{ 
+              fontSize: "0.8rem", 
+              marginLeft: "12px", 
+              fontWeight: "normal",
+              padding: "3px 10px",
+              backgroundColor: theme.colors.primary[1],
+              borderRadius: "6px",
+              border: `1px solid ${theme.colors.primary[3]}`,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              cursor: "pointer",
+            }}
+            onMouseEnter={() => setStatsExpanded(true)}
+            onMouseLeave={() => setStatsExpanded(false)}
+          >
             <span>Total: ${totalEarnings.toFixed(2)}</span>
-            {typeof totalEarningsPerHour !== "undefined" && (
-              <span style={{ 
-                paddingLeft: "8px",
-                borderLeft: `1px solid ${theme.colors.primary[3]}`
-              }}>
-                ${totalEarningsPerHour.toFixed(2)}/hr
-              </span>
-            )}
-            {typeof averageRewardPerHit !== "undefined" && (
-              <span style={{ 
-                paddingLeft: "8px",
-                borderLeft: `1px solid ${theme.colors.primary[3]}`
-              }}>
-                Avg: ${averageRewardPerHit.toFixed(2)}
-              </span>
-            )}
-            {typeof totalDuration !== "undefined" && (
-              <span style={{ 
-                paddingLeft: "8px",
-                borderLeft: `1px solid ${theme.colors.primary[3]}`
-              }}>
-                Time: {formatDuration(totalDuration)}
-              </span>
+            {statsExpanded && (
+              <>
+                {typeof totalEarningsPerHour !== "undefined" && (
+                  <span style={{ 
+                    paddingLeft: "8px",
+                    borderLeft: `1px solid ${theme.colors.primary[3]}`
+                  }}>
+                    ${totalEarningsPerHour.toFixed(2)}/hr
+                  </span>
+                )}
+                {typeof averageRewardPerHit !== "undefined" && (
+                  <span style={{ 
+                    paddingLeft: "8px",
+                    borderLeft: `1px solid ${theme.colors.primary[3]}`
+                  }}>
+                    Avg: ${averageRewardPerHit.toFixed(2)}
+                  </span>
+                )}
+                {typeof totalDuration !== "undefined" && (
+                  <span style={{ 
+                    paddingLeft: "8px",
+                    borderLeft: `1px solid ${theme.colors.primary[3]}`
+                  }}>
+                    Time: {formatDuration(totalDuration)}
+                  </span>
+                )}
+              </>
             )}
           </span>
         )}

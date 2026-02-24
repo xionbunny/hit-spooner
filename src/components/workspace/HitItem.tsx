@@ -137,11 +137,47 @@ const RequesterNameRow = styled.div`
   gap: ${(props) => props.theme.spacing.xxs};
 `;
 
-const RatingsContainer = styled.div`
+const RatingsContainer = styled.div<{ expanded?: boolean }>`
+  display: flex;
+  flex-direction: column;
+  gap: ${(props) => props.theme.spacing.xxs};
+  align-items: flex-end;
+`;
+
+const PrimaryRatingRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${(props) => props.theme.spacing.xxs};
+`;
+
+const DetailedRatingsContainer = styled.div<{ expanded: boolean }>`
   display: flex;
   gap: ${(props) => props.theme.spacing.xxs};
   flex-wrap: wrap;
   justify-content: flex-end;
+  overflow: hidden;
+  max-height: ${(props) => props.expanded ? "80px" : "0"};
+  opacity: ${(props) => props.expanded ? "1" : "0"};
+  transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+`;
+
+const ExpandToggle = styled.div<{ expanded: boolean }>`
+  cursor: pointer;
+  color: ${(props) => props.theme.colors.primary[7]};
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transition: color 0.2s;
+
+  &:hover {
+    color: ${(props) => props.theme.colors.primary[8]};
+  }
+
+  span {
+    transition: transform 0.2s ease-in-out;
+    transform: rotate(${(props) => props.expanded ? "180deg" : "0deg"});
+  }
 `;
 
 const RatingBadge = styled.div<{ ratingClass?: keyof Theme["other"]["turkerView"] }>`
@@ -239,6 +275,7 @@ export const HitItem: React.FC<HitItemProps> = ({
   const theme = useTheme();
   const [isButtonVisible, setButtonVisible] = useState(true);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [areRatingsExpanded, setRatingsExpanded] = useState(false);
 
   const { acceptHit, deleteHit, addOrUpdateHit, addHitToAccept, removeHitFromAccept, favoriteRequesters } = useStore(
     useCallback((state) => ({
@@ -357,18 +394,26 @@ export const HitItem: React.FC<HitItemProps> = ({
               </RequesterNameRow>
               {(hit.requesterInfo?.taskApprovalRate || hit.requesterRatings) && (
                 <RatingsContainer>
-                  {hit.requesterInfo?.taskApprovalRate && (
-                    <Tooltip label={`MTurk Approval Rate: ${hit.requesterInfo.taskApprovalRate}`} position="top" style={tooltipStyle}>
-                      <RatingBadge
-                        ratingClass={parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 99 ? "success" : parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 95 ? "warning" : "danger"}
-                      >
-                        <IconPercentage size={12} />
-                        {hit.requesterInfo.taskApprovalRate}
-                      </RatingBadge>
-                    </Tooltip>
-                  )}
+                  <PrimaryRatingRow>
+                    {hit.requesterInfo?.taskApprovalRate && (
+                      <Tooltip label={`MTurk Approval Rate: ${hit.requesterInfo.taskApprovalRate}`} position="top" style={tooltipStyle}>
+                        <RatingBadge
+                          ratingClass={parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 99 ? "success" : parseFloat(hit.requesterInfo.taskApprovalRate.replace(/[^0-9.]/g, '') || "0") >= 95 ? "warning" : "danger"}
+                        >
+                          <IconPercentage size={12} />
+                          {hit.requesterInfo.taskApprovalRate}
+                        </RatingBadge>
+                      </Tooltip>
+                    )}
+                    {hit.requesterRatings && (
+                      <ExpandToggle expanded={areRatingsExpanded} onClick={() => setRatingsExpanded(!areRatingsExpanded)}>
+                        <span>{areRatingsExpanded ? "▼" : "▶"}</span>
+                        {areRatingsExpanded ? "Hide" : "More"}
+                      </ExpandToggle>
+                    )}
+                  </PrimaryRatingRow>
                   {hit.requesterRatings && (
-                    <>
+                    <DetailedRatingsContainer expanded={areRatingsExpanded}>
                       <Tooltip label={`Pay: ${hit.requesterRatings.pay.text}`} position="top" style={tooltipStyle}>
                         <RatingBadge
                           ratingClass={hit.requesterRatings.pay.class as keyof Theme["other"]["turkerView"]}
@@ -393,7 +438,7 @@ export const HitItem: React.FC<HitItemProps> = ({
                           {hit.requesterRatings.fast.text}
                         </RatingBadge>
                       </Tooltip>
-                    </>
+                    </DetailedRatingsContainer>
                   )}
                 </RatingsContainer>
               )}
@@ -403,7 +448,9 @@ export const HitItem: React.FC<HitItemProps> = ({
         {hit.unavailable && hit.last_updated_time && (
           <LastSeenInfo>
             <IconAlertCircle size={16} />
-            Last seen: {format(new Date(hit.last_updated_time), "PPPpp")} ({formatDistanceToNow(new Date(hit.last_updated_time), { addSuffix: true })})
+            <Tooltip label={format(new Date(hit.last_updated_time), "PPPpp")} position="top" style={tooltipStyle}>
+              <span>Last seen: {formatDistanceToNow(new Date(hit.last_updated_time), { addSuffix: true })}</span>
+            </Tooltip>
           </LastSeenInfo>
         )}
       </HitItemWrapper>

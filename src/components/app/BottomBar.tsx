@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { FaBan, FaChartBar, FaCog, FaPause, FaPlay } from "react-icons/fa";
+import { FaPause, FaPlay } from "react-icons/fa";
 import styled from "@emotion/styled";
-import { Tooltip } from "@mantine/core";
+import { Tooltip, Menu, UnstyledButton, Text } from "@mantine/core";
+import { IconMenu, IconSettings, IconChartBar, IconBan, IconDotsVertical } from "@tabler/icons-react";
 import SettingsModal from "../modals/SettingsModal";
 import DashboardModal from "../modals/DashboardModal";
 import BlockedRequestersModal from "../modals/BlockedRequestersModal";
@@ -184,39 +185,55 @@ const BottomBar: React.FC<IBottomBarProps> = ({ minimal }) => {
           <HitSpoonerLogo />
         ) : (
           <>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <Tooltip
-                label="Settings"
-                withArrow
-                position="top"
-                styles={customTooltipStyles}
+            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <Menu
+                shadow="md"
+                width={200}
+                position="top-start"
+                styles={{
+                  dropdown: {
+                    backgroundColor: theme.colors.primary[0],
+                    border: `1px solid ${theme.colors.primary[3]}`,
+                  },
+                  item: {
+                    color: theme.colors.primary[9],
+                    '&[data-hovered]': {
+                      backgroundColor: theme.colors.primary[2],
+                    },
+                  },
+                }}
               >
-                <IconButton onClick={toggleSettingsModal}>
-                  <FaCog size={24} />
-                </IconButton>
-              </Tooltip>
+                <Menu.Target>
+                  <Tooltip label="Menu" withArrow position="top" styles={customTooltipStyles}>
+                    <IconButton>
+                      <IconMenu size={24} />
+                    </IconButton>
+                  </Tooltip>
+                </Menu.Target>
 
-              <Tooltip
-                label="Dashboard"
-                withArrow
-                position="top"
-                styles={customTooltipStyles}
-              >
-                <IconButton onClick={toggleDashboardModal}>
-                  <FaChartBar size={24} />
-                </IconButton>
-              </Tooltip>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    onClick={toggleSettingsModal}
+                    leftSection={<IconSettings size={18} />}
+                  >
+                    Settings
+                  </Menu.Item>
+                  <Menu.Item
+                    onClick={toggleDashboardModal}
+                    leftSection={<IconChartBar size={18} />}
+                  >
+                    Dashboard
+                  </Menu.Item>
+                  <Menu.Item
+                    onClick={toggleBlockedModal}
+                    leftSection={<IconBan size={18} />}
+                  >
+                    Blocked Requesters
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
 
-              <Tooltip
-                label="Blocked Requesters"
-                withArrow
-                position="top"
-                styles={customTooltipStyles}
-              >
-                <IconButton onClick={toggleBlockedModal}>
-                  <FaBan size={24} />
-                </IconButton>
-              </Tooltip>
+              <div style={{ width: "1px", height: "24px", backgroundColor: theme.colors.primary[3] }} />
 
               <Tooltip
                 label={
