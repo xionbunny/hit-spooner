@@ -304,14 +304,19 @@ export const HitItem: React.FC<HitItemProps> = ({
     }), [])
   );
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
     if (onSelect) onSelect();
-    if (onPreview) onPreview();
-  }, [onSelect, onPreview]);
+  }, [onSelect]);
 
   const handleDoubleClick = useCallback(() => {
     if (onAccept) onAccept();
   }, [onAccept]);
+
+  const handlePreviewClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onPreview) onPreview();
+  }, [onPreview]);
 
   const handleScoopToggle = useCallback((scoopType: "scoop" | "shovel" | undefined) => {
     const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
