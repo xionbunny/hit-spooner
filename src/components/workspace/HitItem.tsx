@@ -391,24 +391,24 @@ export const HitItem: React.FC<HitItemProps> = ({
         <BottomSection>
           <div style={{ display: "flex", gap: theme.spacing.sm }}>
             <Tooltip label="Preview HIT" position="bottom" style={tooltipStyle}>
-              <IconButton active onClick={() => window.open(`https://www.mturk.com/mturk/preview?groupId=${hit.hit_set_id}`, "_blank")}>
+              <IconButton active onClick={(e) => { e.stopPropagation(); window.open(`https://www.mturk.com/mturk/preview?groupId=${hit.hit_set_id}`, "_blank"); }}>
                 <IconEye size={22} />
               </IconButton>
             </Tooltip>
             <Tooltip label="Scoop HIT" position="bottom" style={tooltipStyle}>
-              <IconButton active={hit.scoop === "scoop"} scoopType="scoop" onClick={() => handleScoopToggle("scoop")} style={{ transform: "scaleX(-1)" }}>
+              <IconButton active={hit.scoop === "scoop"} scoopType="scoop" onClick={(e) => { e.stopPropagation(); handleScoopToggle("scoop"); }} style={{ transform: "scaleX(-1)" }}>
                 <GiSpoon size={24} />
               </IconButton>
             </Tooltip>
             <Tooltip label="Shovel HIT" position="bottom" style={tooltipStyle}>
-              <IconButton active={hit.scoop === "shovel"} scoopType="shovel" onClick={() => handleScoopToggle("shovel")}>
+              <IconButton active={hit.scoop === "shovel"} scoopType="shovel" onClick={(e) => { e.stopPropagation(); handleScoopToggle("shovel"); }}>
                 <TbShovel size={24} />
               </IconButton>
             </Tooltip>
           </div>
           {!hideRequester && (
             <RequesterInfo>
-              <RequesterNameRow onClick={() => onRequesterClick?.(hit.requester_id)}>
+              <RequesterNameRow onClick={(e) => { e.stopPropagation(); onRequesterClick?.(hit.requester_id); }}>
                 {hit.requester_name}{" "}
                 {isFavorite ? (
                   <IconStarFilled size={18} color={theme.other.favoriteIcon} style={{ position: "relative", top: "3px" }} />
