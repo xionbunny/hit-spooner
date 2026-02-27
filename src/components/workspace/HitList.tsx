@@ -163,12 +163,15 @@ export const HitList: React.FC<IHitListProps> = ({
       />
       <QuickFilters onFilter={setQuickFilter} activeFilter={quickFilter} />
       
-      {batchMode && (
+      {batchMode ? (
         <Group gap="xs" p="xs" style={{ backgroundColor: "#e9f5ff", borderBottom: "1px solid #b3d9ff" }}>
           <Text size="sm" fw={500}>
-            Batch Mode: {selectedHits.size} selected
+            Batch Select: {selectedHits.size} selected
           </Text>
-          <Tooltip label="Accept all selected">
+          <Text size="xs" c="dimmed">
+            (click HITs to select)
+          </Text>
+          <Tooltip label="Accept all selected HITs">
             <ActionIcon color="green" variant="filled" onClick={handleBatchAccept} disabled={selectedHits.size === 0}>
               <IconCheck size={18} />
             </ActionIcon>
@@ -184,7 +187,7 @@ export const HitList: React.FC<IHitListProps> = ({
             </ActionIcon>
           </Tooltip>
         </Group>
-      )}
+      ) : null}
 
       {!batchMode && filteredHits.length > 0 && (
         <Group gap="xs" p="xs">

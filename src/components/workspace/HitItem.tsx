@@ -301,10 +301,10 @@ export const HitItem: React.FC<HitItemProps> = ({
   );
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if (e.shiftKey && onBatchToggle) {
-      onBatchToggle(true);
-    } else {
-      if (onSelect) onSelect();
+    if (onBatchToggle) {
+      onBatchToggle(e.shiftKey);
+    } else if (onSelect) {
+      onSelect();
       if (onPreview) onPreview();
     }
   }, [onSelect, onPreview, onBatchToggle]);
