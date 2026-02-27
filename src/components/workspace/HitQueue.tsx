@@ -1,8 +1,7 @@
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import styled from "@emotion/styled";
 import { useTheme } from "@emotion/react";
 import { Table, Progress, ActionIcon, Tooltip } from "@mantine/core";
-import { IconArrowBack } from "@tabler/icons-react";
 import { useStore } from "../../hooks";
 import { 
   useTotalEarnings, 
@@ -13,7 +12,6 @@ import {
 import { IHitAssignment } from "@hit-spooner/api";
 import PanelTitleBar from "../app/PanelTitleBar";
 import { formatDistanceToNowStrict, format } from "date-fns";
-import YesNoModal from "../modals/YesNoModal";
 
 const StyledTable = styled(Table)`
   width: 100%;
@@ -68,10 +66,7 @@ const tooltipStyles = (theme: any) => ({
 });
 
 const HitQueue: React.FC = () => {
-  const { queue, returnHit } = useStore((state) => ({
-    queue: state.queue,
-    returnHit: state.returnHit,
-  }));
+  const queue = useStore((state) => state.queue);
 
   const totalEarnings = useStore(useTotalEarnings);
   const totalEarningsPerHour = useStore(useTotalEarningsPerHour);
@@ -80,8 +75,6 @@ const HitQueue: React.FC = () => {
 
   const theme = useTheme();
 
-  const [returnModalOpen, setReturnModalOpen] = useState(false);
-  const [assignmentToReturn, setAssignmentToReturn] = useState<IHitAssignment | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
@@ -97,19 +90,7 @@ const HitQueue: React.FC = () => {
     window.open(url, "mturkWindow");
   }, []);
 
-  const handleReturnClick = useCallback((e: React.MouseEvent, assignment: IHitAssignment) => {
-    e.stopPropagation();
-    setAssignmentToReturn(assignment);
-    setReturnModalOpen(true);
-  }, []);
 
-  const handleConfirmReturn = useCallback(async () => {
-    if (assignmentToReturn) {
-      await returnHit(assignmentToReturn);
-    }
-    setReturnModalOpen(false);
-    setAssignmentToReturn(null);
-  }, [assignmentToReturn, returnHit]);
 
   const calculateTimeRemainingPercentage = useCallback((deadline: string, duration: number) => {
     if (duration <= 0) return 0;
@@ -130,14 +111,7 @@ const HitQueue: React.FC = () => {
     return "#16a34a"; // > 30 minutes - green
   }, [currentTime, theme.colors.primary[9]]);
 
-  const returnModalMessage = assignmentToReturn ? (
-    <div>
-      <p>Are you sure you want to return this HIT?</p>
-      <p><strong>{assignmentToReturn.project.title}</strong></p>
-      <p>Requester: {assignmentToReturn.project.requester_name}</p>
-      <p>Reward: ${assignmentToReturn.project.monetary_reward.amount_in_dollars.toFixed(2)}</p>
-    </div>
-  ) : null;
+
 
   if (queue.length === 0) {
     return (
@@ -201,32 +175,11 @@ const HitQueue: React.FC = () => {
                     </span>
                   </Tooltip>
                 </StyledTableCell>
-                <StyledTableCell>
-                  <Tooltip label="Return HIT" position="left" styles={tooltipStyles(theme)}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      size="sm"
-                      onClick={(e) => handleReturnClick(e, assignment)}
-                    >
-                      <IconArrowBack size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                </StyledTableCell>
               </StyledTableRow>
             );
           })}
         </tbody>
       </StyledTable>
-
-      <YesNoModal
-        isOpen={returnModalOpen}
-        onClose={() => setReturnModalOpen(false)}
-        onConfirm={handleConfirmReturn}
-        message={returnModalMessage}
-        confirmLabel="Return"
-        cancelLabel="Cancel"
-      />
     </>
   );
 };

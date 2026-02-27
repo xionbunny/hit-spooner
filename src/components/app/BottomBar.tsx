@@ -288,4 +288,4 @@ const BottomBar: React.FC<IBottomBarProps> = ({ minimal }) => {
   );
 };
 
-export default BottomBar;
+export default React.memo(BottomBar);

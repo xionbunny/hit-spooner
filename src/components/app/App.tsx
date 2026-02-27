@@ -7,7 +7,7 @@ import { MantineProvider, MantineTheme } from "@mantine/core";
 import "@mantine/core/styles.css";
 import { Notifications } from "@mantine/notifications";
 import "@mantine/notifications/styles.css";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Workspace from "../workspace/Workspace";
 import HitCompletePage from "./HitCompletePage";
 import { useStore } from "../../hooks";
@@ -38,6 +38,7 @@ const App: React.FC = () => {
 
   const [showHitComplete, setShowHitComplete] = useState(false);
   const [showNoMoreHits, setShowNoMoreHits] = useState(false);
+  const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
     initAudioContext();
@@ -91,11 +92,16 @@ const App: React.FC = () => {
   }, [isHitSpoonerUrl, startUpdateIntervals, fetchAndUpdateHitsQueue]);
 
   useEffect(() => {
-    if (showHitComplete && queue.length > 0) {
+    if (showHitComplete && queue.length > 0 && !hasNavigatedRef.current) {
+      hasNavigatedRef.current = true;
       const timer = setTimeout(goToNextHitInQueue, 1500);
       return () => clearTimeout(timer);
     }
   }, [showHitComplete, queue, goToNextHitInQueue]);
+
+  useEffect(() => {
+    hasNavigatedRef.current = false;
+  }, [queue]);
 
   if (!showHitComplete && !showNoMoreHits && !isHitSpoonerUrl) {
     return null;

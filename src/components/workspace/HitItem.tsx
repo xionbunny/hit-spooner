@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { keyframes, useTheme, Theme } from "@emotion/react";
 import styled from "@emotion/styled";
 import { IHitProjectWithHourlyRate } from "@hit-spooner/api";
-import { Tooltip, Badge } from "@mantine/core";
+import { Tooltip } from "@mantine/core";
 import {
   IconAlertCircle,
   IconEye,
@@ -10,7 +10,6 @@ import {
   IconUser,
   IconX,
   IconCurrencyDollar,
-  IconThumbDown,
   IconSpeakerphone,
   IconClock,
   IconPercentage,
@@ -44,7 +43,7 @@ const HitItemWrapper = styled.div<{ unavailable?: boolean }>`
   border-radius: 8px;
   padding: ${(props) => props.theme.spacing.xxs};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  animation: ${fadeIn} 0.5s ease-in-out;
+  animation: ${fadeIn} 0.5s ease-in-out forwards;
   opacity: ${(props) => (props.unavailable ? 0.6 : 1)};
   transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s ease-in-out;
 
@@ -292,7 +291,6 @@ export const HitItem: React.FC<HitItemProps> = ({
     const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
     addOrUpdateHit({ ...hit, scoop: updatedScoop });
     if (updatedScoop) {
-      playSound('chime');
       addHitToAccept({ ...hit, scoop: updatedScoop });
     } else {
       removeHitFromAccept(hit.hit_set_id);

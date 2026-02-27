@@ -676,56 +676,6 @@ export const useStore = create<IHitSpoonerStoreState>((set, get) => {
       await deleteHitFromIndexedDb(hitId);
     },
 
-    returnHit: async (assignment: IHitAssignment) => {
-      try {
-        const response = await chrome.runtime.sendMessage({
-          type: "RETURN_HIT",
-          payload: {
-            hitSetId: assignment.project.hit_set_id,
-            taskId: assignment.task_id,
-            assignmentId: assignment.assignment_id,
-          },
-        });
-
-        if (response?.success) {
-          set((state) => ({
-            queue: state.queue.filter((a) => a.assignment_id !== assignment.assignment_id),
-          }));
-          notifications.show({
-            title: "HIT Returned",
-            message: "The HIT has been successfully returned",
-            color: "teal",
-            style: { backgroundColor: "#2B7A78", color: "#FFFFFF" },
-            styles: {
-              title: { color: "#FFFFFF" },
-              description: { color: "#FFFFFF" },
-            },
-          });
-        } else {
-          const errorMessage = response?.error || "Failed to return HIT - unknown error";
-          console.error("Failed to return HIT:", errorMessage);
-          notifications.show({
-            title: "Failed to Return HIT",
-            message: errorMessage,
-            color: "orange",
-            style: { backgroundColor: "#F39C12", color: "#FFFFFF" },
-            styles: {
-              title: { color: "#FFFFFF" },
-              description: { color: "#FFFFFF" },
-            },
-          });
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Failed to return HIT - unexpected error";
-        console.error("Error returning HIT:", errorMessage);
-        notifications.show({
-          title: "Failed to Return HIT",
-          message: errorMessage,
-          color: "red",
-        });
-      }
-    },
-
     startUpdateIntervals: () => {
       clearIntervals();
 
