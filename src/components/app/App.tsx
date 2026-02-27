@@ -40,12 +40,6 @@ const App: React.FC = () => {
   const [showNoMoreHits, setShowNoMoreHits] = useState(false);
   const hasNavigatedRef = useRef(false);
 
-  useEffect(() => {
-    // CHANGE LOG: Removed premature AudioContext initialization to fix Chrome autoplay policy
-    // AudioContext will be initialized on first user interaction
-    // This prevents the "AudioContext was not allowed to start" error
-  }, []);
-
   const goToNextHitInQueue = useCallback(() => {
     if (queue.length > 0) {
       const nextHit = queue[0];

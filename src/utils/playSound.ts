@@ -180,8 +180,7 @@ const generateSoundBuffer = (type: SoundType, ctx: AudioContext): AudioBuffer =>
 const preloadSounds = (): void => {
   if (cachedSounds) return;
 
-  // CHANGE LOG: Use existing AudioContext instead of creating new one
-  // This prevents AudioContext creation before user interaction
+    // This prevents AudioContext creation before user interaction
   if (!audioContext) {
     return; // Don't preload until AudioContext is properly unlocked
   }
@@ -203,8 +202,7 @@ const unlockAudio = (): void => {
   if (isAudioUnlocked) return;
 
   try {
-    // CHANGE LOG: Only create AudioContext when user actually interacts, not just when listeners are set up
-    // This ensures AudioContext creation happens after user gesture
+        // This ensures AudioContext creation happens after user gesture
     const ctx = createAudioContext();
     
     if (ctx.state === "suspended") {
@@ -313,8 +311,7 @@ export const setVolume = (volume: number): void => {
 export const playSound = (soundType: SoundType): void => {
   if (!isAudioUnlocked) {
     pendingSounds.push(soundType);
-    setupInteractionListeners(); // CHANGE LOG: Only setup listeners when needed, not on module load
-    return;
+    setupInteractionListeners();     return;
   }
 
   if (pendingSounds.length > 0) {
@@ -349,7 +346,6 @@ export const initAudioContext = (): void => {
 
 let interactionListenersSetup = false;
 
-// CHANGE LOG: Added guard flag to prevent duplicate interaction listener setup
 // This ensures AudioContext is only created on first user interaction
 const setupInteractionListeners = (): void => {
   if (interactionListenersSetup) return;
@@ -369,9 +365,3 @@ const setupInteractionListeners = (): void => {
   document.addEventListener("mousedown", unlockOnInteraction, true);
 };
 
-// CHANGE LOG: Removed automatic setupInteractionListeners() call to prevent premature AudioContext creation
-// Previous code (lines 334-336): 
-// if (typeof window !== "undefined") {
-//   setupInteractionListeners();
-// }
-// This was causing AudioContext to be created before user interaction, violating Chrome autoplay policy
