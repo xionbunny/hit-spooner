@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import styled from "@emotion/styled";
+import { Modal, Table, Text, Badge, Group } from "@mantine/core";
 import HitItem from "./HitItem";
 import { IHitProject } from "@hit-spooner/api";
 import { useStore } from "../../hooks";
@@ -25,6 +26,20 @@ const GridContainer = styled.div<{ columns: number }>`
   ${({ theme }) => themedScrollbarStyles(theme)};
 `;
 
+const KeyboardHintText = styled.div`
+  position: fixed;
+  bottom: 80px;
+  left: 20px;
+  font-size: 11px;
+  color: #666;
+  background: rgba(255,255,255,0.9);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  &:hover { opacity: 1; }
+`;
+
 interface IHitListProps {
   hits: IHitProject[];
   title: string;
@@ -48,6 +63,17 @@ export const HitList: React.FC<IHitListProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [previewHit, setPreviewHit] = useState<IHitProject | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+
+  const shortcuts = [
+    { key: "j / ↓", desc: "Next HIT" },
+    { key: "k / ↑", desc: "Previous HIT" },
+    { key: "g", desc: "First HIT" },
+    { key: "G", desc: "Last HIT" },
+    { key: "Enter", desc: "Accept HIT" },
+    { key: "Space", desc: "Preview HIT" },
+    { key: "?", desc: "Show shortcuts" },
+  ];
 
   const filteredHits = useMemo(
     () => {
@@ -96,6 +122,10 @@ export const HitList: React.FC<IHitListProps> = ({
             setPreviewHit(filteredHits[selectedIndex]);
             setPreviewOpen(true);
           }
+          break;
+        case "?":
+          e.preventDefault();
+          setShowHelp(true);
           break;
       }
     },
@@ -150,6 +180,28 @@ export const HitList: React.FC<IHitListProps> = ({
           setPreviewOpen(false);
         }}
       />
+
+      <KeyboardHintText onClick={() => setShowHelp(true)}>
+        Press ? for shortcuts
+      </KeyboardHintText>
+
+      <Modal
+        opened={showHelp}
+        onClose={() => setShowHelp(false)}
+        title="Keyboard Shortcuts"
+        centered
+      >
+        <Table>
+          <Table.Tbody>
+            {shortcuts.map((s) => (
+              <Table.Tr key={s.key}>
+                <Table.Td><Badge variant="outline">{s.key}</Badge></Table.Td>
+                <Table.Td>{s.desc}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Modal>
     </HitListContainer>
   );
 };

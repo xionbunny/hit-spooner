@@ -38,12 +38,20 @@ const fadeIn = keyframes`
   to { opacity: 1; }
 `;
 
-const HitItemWrapper = styled.div<{ unavailable?: boolean; isSelected?: boolean }>`
+const getRewardBorderColor = (amount: number): string => {
+  if (amount >= 1.0) return "#22c55e";
+  if (amount >= 0.50) return "#3b82f6";
+  if (amount >= 0.25) return "#eab308";
+  return "#9ca3af";
+};
+
+const HitItemWrapper = styled.div<{ unavailable?: boolean; isSelected?: boolean; rewardAmount?: number }>`
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   background-color: ${(props) => props.theme.other.hitBackground};
   border: 2px solid ${(props) => props.isSelected ? props.theme.colors.primary[5] : props.theme.other.hitBorder};
+  border-left: 4px solid ${(props) => props.rewardAmount ? getRewardBorderColor(props.rewardAmount) : props.theme.other.hitBorder};
   border-radius: 8px;
   padding: ${(props) => props.theme.spacing.xxs};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -356,7 +364,7 @@ export const HitItem: React.FC<HitItemProps> = ({
 
   return (
     <>
-      <HitItemWrapper unavailable={hit.unavailable} isSelected={isSelected} onClick={handleClick} onDoubleClick={handleDoubleClick}>
+      <HitItemWrapper unavailable={hit.unavailable} isSelected={isSelected} rewardAmount={hit.monetary_reward?.amount_in_dollars || 0} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <TopSection>
           <LeftSection>
             <RewardPanel rateColor={hourlyRateColor}>
