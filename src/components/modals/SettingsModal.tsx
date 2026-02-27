@@ -125,7 +125,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <>
               <Select
                 label="Sound Type"
-                data={soundOptions}
+                data={soundOptions.map(s => ({ value: s.value, label: s.label }))}
                 placeholder="Select sound"
                 onChange={handleSoundTypeChange}
                 value={config.soundType}

@@ -1,10 +1,14 @@
-export type SoundType = "chime" | "coin" | "bell" | "pop";
+export type SoundType = "chime" | "coin" | "bell" | "pop" | "ding" | "notification" | "success" | "alert";
 
-export const soundOptions: { value: SoundType; label: string }[] = [
-  { value: "chime", label: "Chime" },
-  { value: "coin", label: "Coin" },
-  { value: "bell", label: "Bell" },
-  { value: "pop", label: "Pop" },
+export const soundOptions: { value: SoundType; label: string; description: string }[] = [
+  { value: "chime", label: "Chime", description: "Soft melodic chime" },
+  { value: "ding", label: "Ding", description: "Classic notification ding" },
+  { value: "notification", label: "Notification", description: "Modern notification tone" },
+  { value: "success", label: "Success", description: "Pleasing success sound" },
+  { value: "alert", label: "Alert", description: "Attention-grabbing alert" },
+  { value: "coin", label: "Coin", description: "Retro coin pickup" },
+  { value: "bell", label: "Bell", description: "Gentle bell ring" },
+  { value: "pop", label: "Pop", description: "Quick pop sound" },
 ];
 
 const SAMPLE_RATE = 44100;
@@ -25,28 +29,93 @@ const createAudioContext = (): AudioContext => {
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     masterGain = audioContext.createGain();
     masterGain.connect(audioContext.destination);
-    masterGain.gain.value = 0.6;
+    masterGain.gain.value = 0.5;
   }
   return audioContext;
 };
 
 const generateSoundBuffer = (type: SoundType, ctx: AudioContext): AudioBuffer => {
-  const duration = type === "bell" ? 0.7 : type === "chime" ? 0.5 : type === "coin" ? 0.35 : 0.12;
+  const duration = type === "alert" ? 0.6 : type === "notification" ? 0.5 : type === "success" ? 0.4 : type === "bell" ? 0.8 : type === "chime" ? 0.5 : type === "ding" ? 0.4 : type === "coin" ? 0.35 : 0.12;
   const bufferSize = Math.floor(SAMPLE_RATE * duration);
   const buffer = ctx.createBuffer(1, bufferSize, SAMPLE_RATE);
   const data = buffer.getChannelData(0);
 
   switch (type) {
+    case "ding": {
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / SAMPLE_RATE;
+        const freq = 1046.5;
+        const envelope = Math.exp(-t * 4) * 0.6;
+        data[i] = Math.sin(2 * Math.PI * freq * t) * envelope;
+        
+        const harmonic = Math.sin(2 * Math.PI * freq * 2 * t) * envelope * 0.3;
+        data[i] += harmonic;
+      }
+      break;
+    }
+
+    case "notification": {
+      const freqs = [523, 659, 784];
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / SAMPLE_RATE;
+        let sample = 0;
+        
+        for (let j = 0; j < freqs.length; j++) {
+          const delay = j * 0.1;
+          const tt = t - delay;
+          if (tt >= 0) {
+            const envelope = Math.exp(-tt * 3) * 0.4;
+            sample += Math.sin(2 * Math.PI * freqs[j] * tt) * envelope;
+          }
+        }
+        data[i] = sample;
+      }
+      break;
+    }
+
+    case "success": {
+      const freqs = [523, 659, 784, 1047];
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / SAMPLE_RATE;
+        let sample = 0;
+        
+        const notes = [523, 659, 784];
+        for (let j = 0; j < notes.length; j++) {
+          const noteTime = j * 0.1;
+          const tt = t - noteTime;
+          if (tt >= 0 && tt < 0.3) {
+            const envelope = Math.exp(-tt * 5) * 0.35;
+            sample += Math.sin(2 * Math.PI * notes[j] * tt) * envelope;
+          }
+        }
+        data[i] = sample;
+      }
+      break;
+    }
+
+    case "alert": {
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / SAMPLE_RATE;
+        const freq = 880 + Math.sin(t * 10) * 200;
+        const envelope = (Math.sin(t * 8) * 0.5 + 0.5) * Math.exp(-t * 2) * 0.6;
+        data[i] = Math.sin(2 * Math.PI * freq * t) * envelope;
+        
+        const sub = Math.sin(2 * Math.PI * 220 * t) * envelope * 0.4;
+        data[i] += sub;
+      }
+      break;
+    }
+
     case "chime": {
-      const freqs = [880, 1109, 1319];
+      const freqs = [880, 1109, 1319, 1760];
       for (let i = 0; i < bufferSize; i++) {
         let sample = 0;
         const t = i / SAMPLE_RATE;
         for (let j = 0; j < freqs.length; j++) {
-          const delay = j * 0.08;
+          const delay = j * 0.06;
           const tt = t - delay;
           if (tt >= 0 && tt < 0.4) {
-            const envelope = Math.exp(-tt * 6) * 0.4;
+            const envelope = Math.exp(-tt * 5) * (0.3 / (j + 1));
             sample += Math.sin(2 * Math.PI * freqs[j] * tt) * envelope;
           }
         }
@@ -79,13 +148,13 @@ const generateSoundBuffer = (type: SoundType, ctx: AudioContext): AudioBuffer =>
     }
 
     case "bell": {
-      const freqs = [523, 659, 784, 1047];
+      const freqs = [523, 659, 784, 1047, 1319];
       for (let i = 0; i < bufferSize; i++) {
         let sample = 0;
         const t = i / SAMPLE_RATE;
 
         for (let j = 0; j < freqs.length; j++) {
-          const envelope = Math.exp(-t * 3.5) * (0.25 / (j + 1));
+          const envelope = Math.exp(-t * 2.5) * (0.2 / (j + 1));
           sample += Math.sin(2 * Math.PI * freqs[j] * t) * envelope;
         }
 
@@ -117,6 +186,10 @@ const preloadSounds = (): void => {
     coin: { buffer: generateSoundBuffer("coin", ctx) },
     bell: { buffer: generateSoundBuffer("bell", ctx) },
     pop: { buffer: generateSoundBuffer("pop", ctx) },
+    ding: { buffer: generateSoundBuffer("ding", ctx) },
+    notification: { buffer: generateSoundBuffer("notification", ctx) },
+    success: { buffer: generateSoundBuffer("success", ctx) },
+    alert: { buffer: generateSoundBuffer("alert", ctx) },
   };
 };
 
@@ -196,7 +269,7 @@ const fallbackToSpeech = (): void => {
     utterance.volume = 1;
     window.speechSynthesis.speak(utterance);
   } catch {
-    // Silently fail if speech also doesn't work
+    // Silently fail
   }
 };
 
@@ -222,12 +295,20 @@ export const playSound = (soundType: SoundType): void => {
   playSoundImmediate(soundType);
 };
 
+export const previewSound = (soundType: SoundType): void => {
+  playSound(soundType);
+};
+
 export const playChime = (): void => playSound("chime");
 export const playCoin = (): void => playSound("coin");
 export const playBell = (): void => playSound("bell");
 export const playPop = (): void => playSound("pop");
+export const playDing = (): void => playSound("ding");
+export const playNotification = (): void => playSound("notification");
+export const playSuccess = (): void => playSound("success");
+export const playAlert = (): void => playSound("alert");
 
-export const announceHitCaught = (soundType: SoundType = "chime"): void => {
+export const announceHitCaught = (soundType: SoundType = "ding"): void => {
   playSound(soundType);
 };
 
