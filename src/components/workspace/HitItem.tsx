@@ -27,6 +27,10 @@ interface HitItemProps {
   hit: IHitProjectWithHourlyRate;
   hideRequester?: boolean;
   onRequesterClick?: (requesterId: string) => void;
+  isSelected?: boolean;
+  onSelect?: () => void;
+  onAccept?: () => void;
+  onPreview?: () => void;
 }
 
 const fadeIn = keyframes`
@@ -34,18 +38,19 @@ const fadeIn = keyframes`
   to { opacity: 1; }
 `;
 
-const HitItemWrapper = styled.div<{ unavailable?: boolean }>`
+const HitItemWrapper = styled.div<{ unavailable?: boolean; isSelected?: boolean }>`
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   background-color: ${(props) => props.theme.other.hitBackground};
-  border: 1px solid ${(props) => props.theme.other.hitBorder};
+  border: 2px solid ${(props) => props.isSelected ? props.theme.colors.primary[5] : props.theme.other.hitBorder};
   border-radius: 8px;
   padding: ${(props) => props.theme.spacing.xxs};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: ${fadeIn} 0.5s ease-in-out forwards;
   opacity: ${(props) => (props.unavailable ? 0.6 : 1)};
-  transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s ease-in-out;
+  transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s ease-in-out, border-color 0.2s;
+  cursor: pointer;
 
   &:hover {
     transform: translateY(-2px);
@@ -270,6 +275,10 @@ export const HitItem: React.FC<HitItemProps> = ({
   hit,
   hideRequester = false,
   onRequesterClick,
+  isSelected = false,
+  onSelect,
+  onAccept,
+  onPreview,
 }) => {
   const theme = useTheme();
   const [isButtonVisible, setButtonVisible] = useState(true);
@@ -286,6 +295,15 @@ export const HitItem: React.FC<HitItemProps> = ({
       favoriteRequesters: state.favoriteRequesters,
     }), [])
   );
+
+  const handleClick = useCallback(() => {
+    if (onSelect) onSelect();
+    if (onPreview) onPreview();
+  }, [onSelect, onPreview]);
+
+  const handleDoubleClick = useCallback(() => {
+    if (onAccept) onAccept();
+  }, [onAccept]);
 
   const handleScoopToggle = useCallback((scoopType: "scoop" | "shovel" | undefined) => {
     const updatedScoop = hit.scoop === scoopType ? undefined : scoopType;
@@ -338,7 +356,7 @@ export const HitItem: React.FC<HitItemProps> = ({
 
   return (
     <>
-      <HitItemWrapper unavailable={hit.unavailable}>
+      <HitItemWrapper unavailable={hit.unavailable} isSelected={isSelected} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <TopSection>
           <LeftSection>
             <RewardPanel rateColor={hourlyRateColor}>
