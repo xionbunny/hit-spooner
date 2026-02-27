@@ -28,9 +28,11 @@ interface HitItemProps {
   hideRequester?: boolean;
   onRequesterClick?: (requesterId: string) => void;
   isSelected?: boolean;
+  isBatchSelected?: boolean;
   onSelect?: () => void;
   onAccept?: () => void;
   onPreview?: () => void;
+  onBatchToggle?: (shiftKey: boolean) => void;
 }
 
 const fadeIn = keyframes`
@@ -38,12 +40,12 @@ const fadeIn = keyframes`
   to { opacity: 1; }
 `;
 
-const HitItemWrapper = styled.div<{ unavailable?: boolean; isSelected?: boolean }>`
+const HitItemWrapper = styled.div<{ unavailable?: boolean; isSelected?: boolean; isBatchSelected?: boolean }>`
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   background-color: ${(props) => props.theme.other.hitBackground};
-  border: 2px solid ${(props) => props.isSelected ? props.theme.colors.primary[5] : props.theme.other.hitBorder};
+  border: 2px solid ${(props) => props.isBatchSelected ? "#22c55e" : props.isSelected ? props.theme.colors.primary[5] : props.theme.other.hitBorder};
   border-radius: 8px;
   padding: ${(props) => props.theme.spacing.xxs};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -276,9 +278,11 @@ export const HitItem: React.FC<HitItemProps> = ({
   hideRequester = false,
   onRequesterClick,
   isSelected = false,
+  isBatchSelected = false,
   onSelect,
   onAccept,
   onPreview,
+  onBatchToggle,
 }) => {
   const theme = useTheme();
   const [isButtonVisible, setButtonVisible] = useState(true);
@@ -296,10 +300,14 @@ export const HitItem: React.FC<HitItemProps> = ({
     }), [])
   );
 
-  const handleClick = useCallback(() => {
-    if (onSelect) onSelect();
-    if (onPreview) onPreview();
-  }, [onSelect, onPreview]);
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (e.shiftKey && onBatchToggle) {
+      onBatchToggle(true);
+    } else {
+      if (onSelect) onSelect();
+      if (onPreview) onPreview();
+    }
+  }, [onSelect, onPreview, onBatchToggle]);
 
   const handleDoubleClick = useCallback(() => {
     if (onAccept) onAccept();
@@ -356,7 +364,7 @@ export const HitItem: React.FC<HitItemProps> = ({
 
   return (
     <>
-      <HitItemWrapper unavailable={hit.unavailable} isSelected={isSelected} onClick={handleClick} onDoubleClick={handleDoubleClick}>
+      <HitItemWrapper unavailable={hit.unavailable} isSelected={isSelected} isBatchSelected={isBatchSelected} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <TopSection>
           <LeftSection>
             <RewardPanel rateColor={hourlyRateColor}>

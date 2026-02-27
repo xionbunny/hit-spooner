@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import styled from "@emotion/styled";
+import { Group, ActionIcon, Tooltip, Text, Badge } from "@mantine/core";
 import HitItem from "./HitItem";
 import { IHitProject } from "@hit-spooner/api";
 import { useStore } from "../../hooks";
@@ -8,6 +9,7 @@ import PanelTitleBar from "../app/PanelTitleBar";
 import { filterHitProjects } from "../../utils";
 import { QuickFilters, applyQuickFilter } from "./QuickFilters";
 import { HitPreviewModal } from "./HitPreviewModal";
+import { IconCheck, IconX } from "@tabler/icons-react";
 
 // Styled container for the entire HitList component
 const HitListContainer = styled.div`
@@ -50,6 +52,8 @@ export const HitList: React.FC<IHitListProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [previewHit, setPreviewHit] = useState<IHitProject | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedHits, setSelectedHits] = useState<Set<string>>(new Set());
 
   const hitIds = useMemo(() => hits.map((h) => h.hit_set_id), [hits]);
 
@@ -115,6 +119,34 @@ export const HitList: React.FC<IHitListProps> = ({
     acceptHit(hit);
   };
 
+  const handleBatchAccept = () => {
+    filteredHits.forEach((hit) => {
+      if (selectedHits.has(hit.hit_set_id)) {
+        acceptHit(hit);
+      }
+    });
+    setSelectedHits(new Set());
+    setBatchMode(false);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedHits(new Set());
+  };
+
+  const handleToggleSelection = (hitId: string, shiftKey: boolean) => {
+    if (!batchMode) return;
+    
+    setSelectedHits((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(hitId)) {
+        newSet.delete(hitId);
+      } else {
+        newSet.add(hitId);
+      }
+      return newSet;
+    });
+  };
+
   const handlePreview = (hit: IHitProject) => {
     setPreviewHit(hit);
     setPreviewOpen(true);
@@ -130,6 +162,38 @@ export const HitList: React.FC<IHitListProps> = ({
         setFilterText={setFilterText}
       />
       <QuickFilters onFilter={setQuickFilter} activeFilter={quickFilter} />
+      
+      {batchMode && (
+        <Group gap="xs" p="xs" style={{ backgroundColor: "#e9f5ff", borderBottom: "1px solid #b3d9ff" }}>
+          <Text size="sm" fw={500}>
+            Batch Mode: {selectedHits.size} selected
+          </Text>
+          <Tooltip label="Accept all selected">
+            <ActionIcon color="green" variant="filled" onClick={handleBatchAccept} disabled={selectedHits.size === 0}>
+              <IconCheck size={18} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Clear selection">
+            <ActionIcon color="gray" variant="outline" onClick={handleClearSelection}>
+              <IconX size={18} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Exit batch mode">
+            <ActionIcon color="red" variant="light" onClick={() => { setBatchMode(false); setSelectedHits(new Set()); }}>
+              Exit
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      )}
+
+      {!batchMode && filteredHits.length > 0 && (
+        <Group gap="xs" p="xs">
+          <Badge variant="outline" style={{ cursor: "pointer" }} onClick={() => setBatchMode(true)}>
+            + Batch Select
+          </Badge>
+        </Group>
+      )}
+
       <GridContainer columns={columns}>
         {filteredHits.map((hit: IHitProject, index: number) => (
           <HitItem
@@ -138,9 +202,11 @@ export const HitList: React.FC<IHitListProps> = ({
             hideRequester={hideRequester}
             onRequesterClick={onRequesterClick}
             isSelected={index === selectedIndex}
+            isBatchSelected={selectedHits.has(hit.hit_set_id)}
             onSelect={() => setSelectedIndex(index)}
             onAccept={() => handleAccept(hit)}
             onPreview={() => handlePreview(hit)}
+            onBatchToggle={(shiftKey) => handleToggleSelection(hit.hit_set_id, shiftKey)}
           />
         ))}
       </GridContainer>

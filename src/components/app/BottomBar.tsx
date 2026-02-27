@@ -111,16 +111,27 @@ const EarningsPanel = styled.div`
   padding-left: ${(props) => props.theme.spacing.xs};
   padding-right: ${(props) => props.theme.spacing.xs};
   font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 `;
 
-/**
- * Styled text for the earnings display.
- */
 const EarningsText = styled.div`
   font-size: ${(props) => props.theme.fontSizes.xl};
   color: ${(props) => props.theme.other.hitRewardColor};
   text-align: center;
   width: 100%;
+`;
+
+const PendingText = styled.div`
+  font-size: ${(props) => props.theme.fontSizes.xs};
+  color: ${(props) => props.theme.colors.primary[6]};
+`;
+
+const HourlyText = styled.div`
+  font-size: ${(props) => props.theme.fontSizes.xs};
+  color: ${(props) => props.theme.colors.primary[6]};
 `;
 
 /**
@@ -158,6 +169,9 @@ const BottomBar: React.FC<IBottomBarProps> = ({ minimal }) => {
   );
   const isPaused = useStore((state) => state.paused);
   const togglePause = useStore((state) => state.togglePause);
+  const queue = useStore((state) => state.queue);
+  
+  const pendingEarnings = queue.reduce((sum, a) => sum + (a.project.monetary_reward?.amount_in_dollars || 0), 0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -267,6 +281,9 @@ const BottomBar: React.FC<IBottomBarProps> = ({ minimal }) => {
             </CenteredLogoContainer>
             <EarningsPanel>
               <EarningsText>${availableEarnings.toFixed(2)}</EarningsText>
+              {pendingEarnings > 0 && (
+                <PendingText>+${pendingEarnings.toFixed(2)} pending</PendingText>
+              )}
             </EarningsPanel>
           </>
         )}
