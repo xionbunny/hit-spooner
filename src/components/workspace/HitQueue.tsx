@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import styled from "@emotion/styled";
 import { useTheme } from "@emotion/react";
 import { Table, Progress, ActionIcon, Tooltip, Badge, Group, Text } from "@mantine/core";
-import { IconExternalLink, IconX } from "@tabler/icons-react";
+import { IconExternalLink } from "@tabler/icons-react";
 import { useStore } from "../../hooks";
 import { 
   useTotalEarnings, 
@@ -49,6 +49,7 @@ const ActionsHeader = styled(StyledTableHeader)`
 const StyledTableRow = styled.tr<{ isNext?: boolean }>`
   background-color: ${(props) => props.theme.colors.primary[0]};
   border-left: ${(props) => props.isNext ? `3px solid #16a34a` : 'none'};
+  cursor: pointer;
   &:nth-of-type(even) {
     background-color: ${(props) => props.theme.colors.primary[1]};
   }
@@ -156,13 +157,10 @@ const HitQueue: React.FC = () => {
 
   const handleOpenHit = useCallback((assignment: IHitAssignment) => {
     const url = `https://worker.mturk.com/projects/${assignment.project.hit_set_id}/tasks/${assignment.task_id}?assignment_id=${assignment.assignment_id}`;
-    window.open(url, "mturkWindow");
+    // CHANGE LOG: Use _blank target to reliably open a new tab/window (named targets can behave inconsistently)
+    window.open(url, "_blank", "noopener,noreferrer");
   }, []);
 
-  const handleReturnHit = useCallback((assignment: IHitAssignment) => {
-    // TODO: Implement return HIT functionality
-    console.log("Return HIT:", assignment.assignment_id);
-  }, []);
 
   // CHANGE LOG: Split handleRowClick into separate functions for better action handling
 
@@ -239,7 +237,11 @@ const HitQueue: React.FC = () => {
             const timeColor = getRemainingTimeColor(assignment.deadline);
             const isNext = index === 0;
             return (
-              <StyledTableRow key={assignment.assignment_id} isNext={isNext}>
+              <StyledTableRow
+                key={assignment.assignment_id}
+                isNext={isNext}
+                onClick={() => handleOpenHit(assignment)}
+              >
                 <StatusCell>
                   {isNext && (
                     <Badge color="green" size="xs" variant="filled">
@@ -248,7 +250,7 @@ const HitQueue: React.FC = () => {
                   )}
                 </StatusCell>
                 <StyledTableCell>{assignment.project.requester_name}</StyledTableCell>
-                <TitleCell onClick={() => handleOpenHit(assignment)} title={assignment.project.title}>
+                <TitleCell title={assignment.project.title}>
                   {assignment.project.title}
                 </TitleCell>
                 <RewardCell>${assignment.project.monetary_reward.amount_in_dollars.toFixed(2)}</RewardCell>
@@ -283,13 +285,15 @@ const HitQueue: React.FC = () => {
                 <ActionsCell>
                   <Group gap="xs" justify="center">
                     <Tooltip label="Open HIT" position="top" styles={tooltipStyles(theme)}>
-                      <ActionIcon size="sm" variant="light" onClick={() => handleOpenHit(assignment)}>
+                      <ActionIcon
+                        size="sm"
+                        variant="light"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenHit(assignment);
+                        }}
+                      >
                         <IconExternalLink size={14} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Return HIT" position="top" styles={tooltipStyles(theme)}>
-                      <ActionIcon size="sm" variant="light" color="red" onClick={() => handleReturnHit(assignment)}>
-                        <IconX size={14} />
                       </ActionIcon>
                     </Tooltip>
                   </Group>

@@ -2,6 +2,17 @@
 
 All notable changes to the Hit Spooner project.
 
+## [Unreleased]
+
+### Fixed
+- **Invalid Keyframe Errors**
+  - Replaced nested `@keyframes` declarations in `HitSpoonerLogo` with Emotion `keyframes` helper to prevent console spam
+
+### Changed
+- **HIT Queue**
+  - Made queue rows clickable again and switched to `window.open(..., "_blank")` for more reliable tab opening
+  - Removed the non-working "Return HIT" button and all related logic to prevent confusing behavior
+
 ## [1.0.1] - 2024-02-23
 
 ### Added
