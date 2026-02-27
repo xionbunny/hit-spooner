@@ -180,7 +180,13 @@ const generateSoundBuffer = (type: SoundType, ctx: AudioContext): AudioBuffer =>
 const preloadSounds = (): void => {
   if (cachedSounds) return;
 
-  const ctx = createAudioContext();
+  // CHANGE LOG: Use existing AudioContext instead of creating new one
+  // This prevents AudioContext creation before user interaction
+  if (!audioContext) {
+    return; // Don't preload until AudioContext is properly unlocked
+  }
+
+  const ctx = audioContext;
   cachedSounds = {
     chime: { buffer: generateSoundBuffer("chime", ctx) },
     coin: { buffer: generateSoundBuffer("coin", ctx) },
@@ -197,27 +203,39 @@ const unlockAudio = (): void => {
   if (isAudioUnlocked) return;
 
   try {
+    // CHANGE LOG: Only create AudioContext when user actually interacts, not just when listeners are set up
+    // This ensures AudioContext creation happens after user gesture
     const ctx = createAudioContext();
     
     if (ctx.state === "suspended") {
       ctx.resume().then(() => {
         isAudioUnlocked = true;
-        preloadSounds();
+        audioContext = ctx; // Store the context for reuse
+        masterGain = ctx.createGain(); // Create and store master gain
+        masterGain.connect(ctx.destination);
+        masterGain.gain.value = 0.5;
+        preloadSounds(); // Now safe to preload
         processSoundQueue();
       }).catch(() => {
         isAudioUnlocked = true;
-        preloadSounds();
+        audioContext = ctx; // Store the context for reuse
+        masterGain = ctx.createGain(); // Create and store master gain
+        masterGain.connect(ctx.destination);
+        masterGain.gain.value = 0.5;
+        preloadSounds(); // Now safe to preload
         processSoundQueue();
       });
     } else {
       isAudioUnlocked = true;
-      preloadSounds();
+      audioContext = ctx; // Store the context for reuse
+      masterGain = ctx.createGain(); // Create and store master gain
+      masterGain.connect(ctx.destination);
+      masterGain.gain.value = 0.5;
+      preloadSounds(); // Now safe to preload
       processSoundQueue();
     }
   } catch {
     isAudioUnlocked = true;
-    preloadSounds();
-    processSoundQueue();
   }
 };
 
@@ -237,7 +255,16 @@ const processSoundQueue = (): void => {
 
 const playSoundImmediate = (type: SoundType): void => {
   try {
-    const ctx = createAudioContext();
+    if (!audioContext) {
+      unlockAudio();
+      return;
+    }
+    
+    const ctx = audioContext;
+    
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
     
     if (!cachedSounds) {
       preloadSounds();
@@ -253,7 +280,11 @@ const playSoundImmediate = (type: SoundType): void => {
     gainNode.gain.value = 0.7;
     
     source.connect(gainNode);
-    gainNode.connect(masterGain!);
+    if (masterGain) {
+      gainNode.connect(masterGain);
+    } else {
+      gainNode.connect(ctx.destination);
+    }
     
     source.start(0);
   } catch {
@@ -282,7 +313,7 @@ export const setVolume = (volume: number): void => {
 export const playSound = (soundType: SoundType): void => {
   if (!isAudioUnlocked) {
     pendingSounds.push(soundType);
-    unlockAudio();
+    setupInteractionListeners(); // CHANGE LOG: Only setup listeners when needed, not on module load
     return;
   }
 
@@ -316,7 +347,14 @@ export const initAudioContext = (): void => {
   unlockAudio();
 };
 
+let interactionListenersSetup = false;
+
+// CHANGE LOG: Added guard flag to prevent duplicate interaction listener setup
+// This ensures AudioContext is only created on first user interaction
 const setupInteractionListeners = (): void => {
+  if (interactionListenersSetup) return;
+  interactionListenersSetup = true;
+
   const unlockOnInteraction = () => {
     unlockAudio();
     document.removeEventListener("click", unlockOnInteraction, true);
@@ -331,6 +369,9 @@ const setupInteractionListeners = (): void => {
   document.addEventListener("mousedown", unlockOnInteraction, true);
 };
 
-if (typeof window !== "undefined") {
-  setupInteractionListeners();
-}
+// CHANGE LOG: Removed automatic setupInteractionListeners() call to prevent premature AudioContext creation
+// Previous code (lines 334-336): 
+// if (typeof window !== "undefined") {
+//   setupInteractionListeners();
+// }
+// This was causing AudioContext to be created before user interaction, violating Chrome autoplay policy

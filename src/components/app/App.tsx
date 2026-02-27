@@ -41,7 +41,9 @@ const App: React.FC = () => {
   const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
-    initAudioContext();
+    // CHANGE LOG: Removed premature AudioContext initialization to fix Chrome autoplay policy
+    // AudioContext will be initialized on first user interaction
+    // This prevents the "AudioContext was not allowed to start" error
   }, []);
 
   const goToNextHitInQueue = useCallback(() => {
